@@ -6,11 +6,12 @@ vendored byte-identical as assets/leader-report-template.html (see scripts/vendo
 follows that skill's references/design.md, the same brand family as dacard.ai/update:
 
   - scorecard rows: the line and its definition, then prior -> actual . BUDGET x in mono with a range
-    line beneath (grey dot prior, status dot actual, a tick at the budget, a green band under it), then
-    the status word
+    line beneath (grey dot prior, ink dot actual, a tick at the budget), then within budget or
+    over budget as plain words
   - plan against actual: budget grey above actual ink, hatched when over budget
   - labels in Geist Mono capitals, sentences in Geist, headings in Instrument Sans; hairlines, not boxes
-  - green, grey-white and red are status only, and the word always prints beside the colour
+  - green, grey-white and red are a bet's landed, watch and stalled only, which did-it-land sets, so
+    this page uses none of them
   - an Illustrative tag when the prices are illustrative
 
 Every figure on the page is a display string from the ledger; the page computes nothing but the
@@ -54,6 +55,7 @@ td .sh{width:64px}
 .scroll{overflow-x:auto}
 .ledger td{font-size:12px}
 .models code{white-space:nowrap}
+.bud{font:400 10px/16px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--t1);white-space:nowrap}
 @media (max-width:980px){.slide{padding:36px 16px 32px}.slide.first{padding-top:40px}}
 @media (max-width:640px){.models td:first-child,.models th:first-child{display:none}}
 @media (max-width:640px){.sc-h,.sc-r{grid-template-columns:minmax(0,1fr) auto;gap:10px 16px}.sc-h span:nth-child(2){display:none}.sc-v{grid-column:1/-1;grid-row:2}.sc-s{grid-column:2;grid-row:1}}
@@ -85,8 +87,9 @@ def pct(v: float) -> str:
 
 
 def status(word: str | None) -> str:
-    if word in ("landed", "watch", "stalled"):
-        return f'<span class="st {e(word)}">{e(word)}</span>'
+    """within budget or over budget, as plain words with no status colour or mark."""
+    if word in ("within budget", "over budget"):
+        return f'<span class="bud">{e(word)}</span>'
     return '<span class="li-t">not checked</span>'
 
 
@@ -99,11 +102,10 @@ def range_line(c: Json) -> str:
     lo, hi = sorted((p, a))
     marks = [
         '<i class="tr"></i>',
-        f'<i class="ok" style="left:0;width:{pct(b)}%"></i>',
         f'<i class="goal" style="left:{pct(b)}%"></i>',
         f'<i class="mv" style="left:{pct(lo)}%;width:{pct(hi - lo)}%"></i>' if prior is not None else "",
         f'<i class="pr" style="left:{pct(p)}%"></i>' if prior is not None else "",
-        f'<i class="ac {e(c["status"])}" style="left:{pct(a)}%"></i>',
+        f'<i class="ac" style="left:{pct(a)}%"></i>',
     ]
     return f'<span class="bl" aria-hidden="true">{"".join(marks)}</span>'
 
@@ -155,9 +157,9 @@ def headline(result: Json) -> str:
         if f["drift"] > 0:
             return f"{f['feature']} is {f['drift_display']} over its cost budget, and {top['model']} drives the largest part."
         return f"{f['feature']} is within its cost budget overall, but {top['model']} runs over it."
-    stalled = [f["feature"] for f in result["features"] if f.get("status") == "stalled"]
-    if stalled:
-        return f"{', '.join(stalled)}: a budget line is stalled."
+    over = [f["feature"] for f in result["features"] if f.get("status") == "over budget"]
+    if over:
+        return f"{', '.join(over)}: a budget line is over budget."
     if any(f.get("status") for f in result["features"]):
         return "Every feature checked is within its cost budget."
     return "No feature could be checked against its cost budget."
@@ -168,13 +170,10 @@ def lede(result: Json) -> str:
     for f in result["features"]:
         for key in ("tokens_per_task", "price_per_token", "cost_per_task"):
             c = f["checks"].get(key)
-            if c and c["status"] != "landed":
+            if c and c["status"] != "within budget":
                 over.append(f"{LABEL[key].lower()} is {c['actual_display']} against {c['budget_display']} ({c['status']})")
     said = f" For {result['features'][0]['feature']}, " + "; ".join(over) + "." if over and len(result["features"]) == 1 else ""
-    return (
-        "Each feature's model spend against the cost budget in its landing brief: two lines, tokens per task and price per token, "
-        f"and their product, cost per task.{said} A line over budget by no more than {result['tolerance'] * 100:.0f}% is watch; further over is stalled."
-    )
+    return f"Each feature's model spend against the cost budget in its landing brief: two lines, tokens per task and price per token, and their product, cost per task.{said} Each line is within budget or over budget."
 
 
 def section(label: str, title: str, body: str) -> str:

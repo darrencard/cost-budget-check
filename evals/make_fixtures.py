@@ -6,11 +6,11 @@ Acme is an invented company: invoicing software for trades businesses, Series C,
 
 The story the fixture tells, for November 2026 against October:
   quote-drafter   gateway log, 10 quotes a day, two requests each. The prompt grew to 13,500 tokens
-                  per task against a budget of 12,000 (stalled), up from 11,500 in October, but cache
-                  reads keep price per token and cost per task under budget (landed).
+                  per task against a budget of 12,000 (over budget), up from 11,500 in October, but cache
+                  reads keep price per token and cost per task within budget.
   invoice-chaser  provider usage CSV. Tokens per task hold at budget, but from 16 November part of the
                   traffic moved to the large model, so price per token and cost per task go over
-                  budget (stalled). October ran on the small model only. It is the driver, on
+                  budget. October ran on the small model only. It is the driver, on
                   vendor-a/large.
   search-assist   a small spend with no landing brief.
 

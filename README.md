@@ -4,7 +4,7 @@ A free Claude skill that checks each AI feature's spend against its landing brie
 
 **Why it matters:** a feature can pass its evals and still cost twice what was planned. The budget is two lines, tokens per task and price per token. This check holds spend to both, in code, with a source for every figure.
 
-**How it works:** it reads live usage (the Anthropic usage report, Vercel AI Gateway, agent run records) or a CSV, and prices it with a pricing table that carries its own source and date. It marks each line landed, watch or stalled, shows the change since last period, and renders one page for leaders.
+**How it works:** it reads live usage (the Anthropic usage report, Vercel AI Gateway, agent run records) or a CSV, and prices it with a pricing table that carries its own source and date. It marks each line within budget or over budget, shows the change since last period, and renders one page for leaders.
 
 **Part of the Landing Loop:** it reads the brief with the Product & Technology Leader Report's own parser and writes the `cost` key of `landing/<bet>.json`, which the report reads.
 
@@ -29,13 +29,13 @@ claude plugin install cost-budget-check@dacard-cost-budget-check
 From the bundled sample, `python3 scripts/check.py --demo` (Acme is an invented company; every figure is illustrative):
 
 ```text
-| Feature        | Line            | Budget      | Actual      | Against budget | Prior       | Since prior | Status  |
-| invoice-chaser | Tokens per task | 3,000       | 2,900       | -3.3%          | 2,900       | +0.0%       | landed  |
-| invoice-chaser | Price per token | $0.00000120 | $0.00000137 | +14.4%         | $0.00000103 | +32.7%      | stalled |
-| invoice-chaser | Cost per task   | $0.0036     | $0.0040     | +10.6%         | $0.0030     | +32.7%      | stalled |
-| quote-drafter  | Tokens per task | 12,000      | 13,500      | +12.5%         | 11,500      | +17.4%      | stalled |
-| quote-drafter  | Price per token | $0.00000400 | $0.00000328 | -17.9%         | $0.00000357 | -8.0%       | landed  |
-| quote-drafter  | Cost per task   | $0.0480     | $0.0443     | -7.6%          | $0.0410     | +8.0%       | landed  |
+| Feature        | Line            | Budget      | Actual      | Against budget | Prior       | Since prior | Status        |
+| invoice-chaser | Tokens per task | 3,000       | 2,900       | -3.3%          | 2,900       | +0.0%       | within budget |
+| invoice-chaser | Price per token | $0.00000120 | $0.00000137 | +14.4%         | $0.00000103 | +32.7%      | over budget   |
+| invoice-chaser | Cost per task   | $0.0036     | $0.0040     | +10.6%         | $0.0030     | +32.7%      | over budget   |
+| quote-drafter  | Tokens per task | 12,000      | 13,500      | +12.5%         | 11,500      | +17.4%      | over budget   |
+| quote-drafter  | Price per token | $0.00000400 | $0.00000328 | -17.9%         | $0.00000357 | -8.0%       | within budget |
+| quote-drafter  | Cost per task   | $0.0480     | $0.0443     | -7.6%          | $0.0410     | +8.0%       | within budget |
 
 Driver: invoice-chaser on vendor-a/large, $88.29 over budget.
 invoice-chaser: 96.0% of tasks succeeded, so cost per successful task is $0.0041.
@@ -44,7 +44,7 @@ Bill: $424.20 billed, $372.94 priced from usage, $51.26 not in the usage given.
 
 ## Sample
 
-[examples/acme/cost-budget-check.html](examples/acme/cost-budget-check.html) follows Acme's `quote-drafting` bet through the Landing Loop. It uses the canonical brief, copied unchanged into `examples/acme/briefs/`, and two weeks of gateway usage with drift: tokens per task stalled, price per token watch, cost per task stalled, driver `vendor-a/xl`. The page has a Markdown twin (`cost-budget-check.md`), and `examples/acme/landing/quote-drafting.json` holds only the `cost` key. Every figure is illustrative.
+[examples/acme/cost-budget-check.html](examples/acme/cost-budget-check.html) follows Acme's `quote-drafting` bet through the Landing Loop. It uses the canonical brief, copied unchanged into `examples/acme/briefs/`, and two weeks of gateway usage with drift: tokens per task, price per token and cost per task all over budget, driver `vendor-a/xl`. The page has a Markdown twin (`cost-budget-check.md`), and `examples/acme/landing/quote-drafting.json` holds only the `cost` key. Every figure is illustrative.
 
 Regenerate it from the repository root (a test checks this command reproduces the committed files byte for byte):
 
@@ -67,8 +67,8 @@ python3 skills/cost-budget-check/scripts/check.py --brief quote-drafting=example
 | Drift and its driver | Splits cost over budget by model so the parts add up, and names the largest; shows each line's change since the prior window | You know which feature and model to look at first |
 | No guessed prices | Refuses a model the pricing table does not price, and a table with no source or date; `--write-pricing-template` lists the models to price | No figure rests on a price from memory |
 | The bill | Reconciles priced usage against `finance.csv` from the Product & Technology Leader Report | Spend with no feature tag shows up |
-| Summary review | `review.py` blocks invented figures, figures borrowed from another feature, wrong status words, "within budget" when it is not, saving claims and the wrong driver | What you send says no more than the data |
-| CI gate | `--fail-on stalled` exits 2 | A scheduled job can flag drift before the invoice does |
+| Summary review | `review.py` blocks invented figures, figures borrowed from another feature, wrong status words (and landed, watch or stalled, which are did-it-land's), "within budget" when it is not, saving claims and the wrong driver | What you send says no more than the data |
+| CI gate | `--fail-on over-budget` exits 2 (`--tolerance` lets a small overrun through) | A scheduled job can flag drift before the invoice does |
 
 ## What you need
 

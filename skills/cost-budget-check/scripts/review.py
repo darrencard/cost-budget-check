@@ -6,8 +6,10 @@ Usage:
 
 Rules (errors exit 1; warnings print and pass):
   figure-not-computed   a number in the draft is not a figure the check computed, as displayed
-  status-mismatch       a line gives a feature or a budget line a status word the check did not
-  budget-claim          a line says a feature is within or under budget when it is not landed
+  status-mismatch       a line says over budget where the check did not, or gives a budget line
+                        landed, watch or stalled (a bet's status, set only by did-it-land)
+  budget-claim          a line says a feature or line is within or under budget when the check
+                        says over budget
   saving-claim          the draft claims a saving, a cut or a cheaper cost; the check compares
                         against a budget, not a past period, so it cannot support one
   driver-mismatch       "driven by" names a model that is not the computed driver for the feature
@@ -27,7 +29,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-STATUS_WORDS = ("landed", "watch", "stalled")
+# within budget is checked by budget-claim; over budget and the bet words here.
+STATUS_WORDS = ("over budget",)
+BET_WORDS = ("landed", "watch", "stalled")
 NUM = re.compile(r"(?<![\w.])([-+]?\$?-?\d[\d,]*(?:\.\d+)?|[-+]?\$?\.\d+)(%?)")
 MONTHS = "January|February|March|April|May|June|July|August|September|October|November|December"
 DATE = re.compile(rf"\b\d{{4}}-\d{{2}}-\d{{2}}\b|\b(?:\d{{1,2}} )?(?:{MONTHS})(?: \d{{4}})?\b|\bQ[1-4] \d{{4}}\b")
@@ -70,6 +74,12 @@ def computed(result: dict[str, Any], scope: str | None = None) -> tuple[set[floa
     return plain, pct
 
 
+def said_of(f: dict[str, Any], lower: str) -> set[str | None]:
+    """The words the check gives what a line is about: the budget lines it names, else the feature."""
+    checks = [k for k, label in CHECK_NAMES.items() if label in lower and k in f["checks"]]
+    return {f["checks"][k]["status"] for k in checks} if checks else {f.get("status")}
+
+
 def same(v: float, values: set[float]) -> bool:
     return any(abs(v - x) <= 1e-12 + 1e-9 * abs(x) for x in values)
 
@@ -106,18 +116,20 @@ def review(result: dict[str, Any], text: str) -> list[dict[str, str]]:
             if not ok:
                 where = f"{about[0]}'s figures" if len(about) == 1 else "cost_check.json"
                 add("figure-not-computed", "error", n, line, f"{token}{is_pct} is not one of {where}. Use the figure as the check displays it, beside the feature it belongs to, or take it out.")
+        for w in BET_WORDS:
+            if named and re.search(rf"\b{w}\b", lower):
+                add("status-mismatch", "error", n, line, f"{w} is a bet's status, set only by did-it-land. A budget line is within budget or over budget.")
         words = [w for w in STATUS_WORDS if re.search(rf"\b{w}\b", lower)]
         if len(named) == 1 and words:
-            f = features[named[0]]
-            checks = [k for k, label in CHECK_NAMES.items() if label in lower and k in f["checks"]]
-            allowed = {f["checks"][k]["status"] for k in checks} if checks else {f.get("status")}
+            allowed = said_of(features[named[0]], lower)
             for w in words:
                 if w not in allowed:
                     add("status-mismatch", "error", n, line, f"the check gives {named[0]} {', '.join(sorted(a for a in allowed if a))}, not {w}.")
         if BUDGET_OK.search(line):
             for name in named:
-                if features[name].get("status") != "landed":
-                    add("budget-claim", "error", n, line, f"{name} is {features[name].get('status', 'not checked')}, so it is not within budget.")
+                allowed = said_of(features[name], lower)
+                if allowed != {"within budget"}:
+                    add("budget-claim", "error", n, line, f"the check gives {name} {', '.join(sorted(a for a in allowed if a)) or 'not checked'}, so it is not within budget.")
         if SAVING.search(line):
             add("saving-claim", "error", n, line, "the check compares spend with a budget, not with a past period, so it cannot show a saving. State the figure against budget instead.")
         for model in DRIVEN.findall(line):

@@ -230,24 +230,24 @@ class Acme(unittest.TestCase):
     def tearDownClass(cls):
         cls.tmp.cleanup()
 
-    def test_quote_drafter_tokens_over_budget_but_cache_keeps_cost_landed(self):
+    def test_quote_drafter_tokens_over_budget_but_cache_keeps_cost_within(self):
         q = self.f["quote-drafter"]
         self.assertEqual(q["tasks"], 300)  # October and 1 December are outside the window
         self.assertAlmostEqual(q["checks"]["tokens_per_task"]["actual"], 13500)
-        self.assertEqual(q["checks"]["tokens_per_task"]["status"], "stalled")
-        self.assertEqual(q["checks"]["price_per_token"]["status"], "landed")
+        self.assertEqual(q["checks"]["tokens_per_task"]["status"], "over budget")
+        self.assertEqual(q["checks"]["price_per_token"]["status"], "within budget")
         self.assertAlmostEqual(q["checks"]["cost_per_task"]["actual"], 0.04434)
-        self.assertEqual(q["checks"]["cost_per_task"]["status"], "landed")
-        self.assertEqual(q["status"], "stalled")
+        self.assertEqual(q["checks"]["cost_per_task"]["status"], "within budget")
+        self.assertEqual(q["status"], "over budget")
 
     def test_quote_drafter_cache_reads_are_split_out(self):
         self.assertEqual(self.f["quote-drafter"]["tokens"], {"input": 2_190_000, "output": 420_000, "cache_read": 1_440_000, "cache_write": 0})
 
     def test_invoice_chaser_price_drift(self):
         i = self.f["invoice-chaser"]
-        self.assertEqual(i["checks"]["tokens_per_task"]["status"], "landed")
+        self.assertEqual(i["checks"]["tokens_per_task"]["status"], "within budget")
         self.assertAlmostEqual(i["checks"]["price_per_token"]["over"], 358.38 / 261_000_000 / 1.2e-6 - 1)
-        self.assertEqual(i["checks"]["price_per_token"]["status"], "stalled")
+        self.assertEqual(i["checks"]["price_per_token"]["status"], "over budget")
         self.assertAlmostEqual(i["cost"], 358.38)
         self.assertAlmostEqual(i["drift"], 358.38 - 90_000 * 0.0036)
 
@@ -281,20 +281,29 @@ class Acme(unittest.TestCase):
         findings = [f for f in review.review(self.result, body) if f["rule"] == "figure-not-computed"]
         self.assertEqual(findings, [])
 
-    def test_only_the_three_status_words(self):
+    def test_only_the_two_budget_words(self):
         words = {c["status"] for f in self.result["features"] for c in f["checks"].values()}
-        self.assertLessEqual(words, {"landed", "watch", "stalled"})
+        words |= {f["status"] for f in self.result["features"] if "status" in f}
+        self.assertEqual(words, {"within budget", "over budget"})
 
-    def test_fail_on_stalled_exits_2(self):
-        with tempfile.TemporaryDirectory() as d:
-            self.assertEqual(run_quiet(acme_args(d, "--fail-on", "stalled"))[0], 2)
+    def test_never_a_bets_status_word(self):
+        for name in ("cost_check.json", "cost_check.md", "cost_check.html"):
+            text = (Path(self.tmp.name) / name).read_text(encoding="utf-8")
+            if name.endswith(".html"):
+                text = text.split("</style>", 1)[1]
+            for word in ("landed", "watch", "stalled"):
+                self.assertNotRegex(text, rf"\b{word}\b", f"{name} prints {word}")
 
-    def test_tolerance_moves_stalled_to_watch(self):
+    def test_fail_on_over_budget_exits_2(self):
         with tempfile.TemporaryDirectory() as d:
-            run_quiet(acme_args(d, "--tolerance", "0.15"))
+            self.assertEqual(run_quiet(acme_args(d, "--fail-on", "over-budget"))[0], 2)
+
+    def test_tolerance_lets_the_gate_through_but_the_line_still_reads_over(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(run_quiet(acme_args(d, "--fail-on", "over-budget", "--tolerance", "0.5"))[0], 0)
             f = {x["feature"]: x for x in load_result(d)["features"]}
-            self.assertEqual(f["invoice-chaser"]["checks"]["price_per_token"]["status"], "watch")
-            self.assertEqual(f["quote-drafter"]["checks"]["tokens_per_task"]["status"], "watch")
+            self.assertEqual(f["invoice-chaser"]["checks"]["price_per_token"]["status"], "over budget")
+            self.assertEqual(f["quote-drafter"]["checks"]["tokens_per_task"]["status"], "over budget")
 
     def test_no_task_count_checks_price_only_and_says_so(self):
         with tempfile.TemporaryDirectory() as d:
@@ -404,7 +413,7 @@ class Drift(unittest.TestCase):
         self.assertEqual([f["rule"] for f in found], ["figure-not-computed"])
 
     def test_the_since_prior_figures_pass_review(self):
-        text = "quote-drafter tokens per task is stalled at 13,500, +17.4% since the prior window (11,500).\n"
+        text = "quote-drafter tokens per task is over budget at 13,500, +17.4% since the prior window (11,500).\n"
         self.assertEqual([f["rule"] for f in review.review(self.result, text)], [])
 
 
@@ -575,14 +584,17 @@ class LandingLoop(unittest.TestCase):
             run_quiet([*args, "--anthropic-cost", str(p)])
             self.assertAlmostEqual(load_result(d)["reconcile"]["billed"], 420.00)
 
-    def test_page_is_self_contained_and_prints_every_status_word(self):
+    def test_page_is_self_contained_and_prints_both_budget_words(self):
         with tempfile.TemporaryDirectory() as d:
             run_quiet(acme_args(d))
             page = (Path(d) / "cost_check.html").read_text(encoding="utf-8")
             self.assertNotRegex(page, r'(src|href)="https?://')
             self.assertIn("@font-face", page)
-            self.assertIn('<span class="st stalled">stalled</span>', page)
-            self.assertIn('<span class="st landed">landed</span>', page)
+            self.assertIn('<span class="bud">over budget</span>', page)
+            self.assertIn('<span class="bud">within budget</span>', page)
+            self.assertNotIn('class="st ', page)
+            self.assertNotIn('class="ac ', page)
+            self.assertNotIn('class="ok"', page)
             self.assertIn("$88.29", page)
 
     def test_page_renders_without_a_bill_and_escapes_text(self):
@@ -636,7 +648,7 @@ class Sample(unittest.TestCase):
         rec = json.loads((ROOT / "examples" / "acme" / "landing" / "quote-drafting.json").read_text(encoding="utf-8"))
         self.assertEqual(sorted(rec), ["bet", "brief", "cost", "schema"])
         self.assertEqual(rec["bet"], "quote-drafting")
-        self.assertEqual(rec["cost"]["budget_status"], "stalled")
+        self.assertEqual(rec["cost"]["budget_status"], "over budget")
         self.assertEqual(rec["cost"]["driver"]["model"], "vendor-a/xl")
 
     def test_the_sample_page_uses_the_leader_report_stylesheet(self):
@@ -646,7 +658,7 @@ class Sample(unittest.TestCase):
         template = (SKILL / "assets" / "leader-report-template.html").read_text(encoding="utf-8")
         self.assertIn(template[template.index("<style>") + 7 : template.index("</style>")], page_html)
         self.assertEqual(hashlib.sha256(template.encode("utf-8")).hexdigest(), "e5740431ab5269606709d352d3d253325df740830e8316f06478873e71d430d0")
-        for mark in ('class="sc-r"', 'class="bl"', 'class="pvr"', 'class="ill">Illustrative', 'class="facts"', '<span class="st stalled">stalled</span>'):
+        for mark in ('class="sc-r"', 'class="bl"', 'class="pvr"', 'class="ill">Illustrative', 'class="facts"', '<span class="bud">over budget</span>'):
             self.assertIn(mark, page_html)
 
 
@@ -666,20 +678,24 @@ class Review(unittest.TestCase):
 
     def test_a_faithful_summary_passes(self):
         text = (
-            "invoice-chaser is stalled: price per token is $0.00000137 against $0.00000120, +14.4%.\n"
+            "invoice-chaser is over budget: price per token is $0.00000137 against $0.00000120, +14.4%.\n"
             "The driver is invoice-chaser, driven by vendor-a/large, $88.29 over budget.\n"
-            "quote-drafter tokens per task is stalled at 13,500 against 12,000.\n"
-            "quote-drafter cost per task is landed at $0.0443.\n"
+            "quote-drafter tokens per task is over budget at 13,500 against 12,000.\n"
+            "quote-drafter cost per task is within budget at $0.0443.\n"
         )
         self.assertEqual(self.rules(text), [])
 
     def test_blocks_an_invented_figure(self):
-        self.assertEqual(self.rules("invoice-chaser is stalled, about $120 over budget."), ["figure-not-computed"])
+        self.assertEqual(self.rules("invoice-chaser is over budget, about $120 over."), ["figure-not-computed"])
 
     def test_blocks_a_status_the_check_did_not_give(self):
-        self.assertIn("status-mismatch", self.rules("invoice-chaser price per token has landed."))
+        self.assertIn("status-mismatch", self.rules("invoice-chaser tokens per task is over budget."))
 
-    def test_blocks_within_budget_for_a_stalled_feature(self):
+    def test_blocks_a_bets_status_word_on_a_budget_line(self):
+        self.assertIn("status-mismatch", self.rules("invoice-chaser price per token has stalled."))
+        self.assertIn("status-mismatch", self.rules("quote-drafter cost per task has landed."))
+
+    def test_blocks_within_budget_for_a_feature_over_budget(self):
         self.assertIn("budget-claim", self.rules("quote-drafter is within budget this month."))
 
     def test_blocks_a_saving_claim(self):
@@ -689,7 +705,7 @@ class Review(unittest.TestCase):
         self.assertIn("driver-mismatch", self.rules("invoice-chaser drift is driven by vendor-a/small."))
 
     def test_warns_on_cause(self):
-        found = review.review(self.result, "invoice-chaser is stalled because the escalation route changed.")
+        found = review.review(self.result, "invoice-chaser is over budget because the escalation route changed.")
         self.assertEqual([(f["rule"], f["level"]) for f in found], [("cause-claim", "warning")])
 
     def test_text_in_the_draft_cannot_change_the_rules(self):
@@ -698,7 +714,7 @@ class Review(unittest.TestCase):
     def test_cli_exit_codes(self):
         with tempfile.TemporaryDirectory() as d:
             good, bad = Path(d) / "good.md", Path(d) / "bad.md"
-            good.write_text("invoice-chaser is stalled.\n", encoding="utf-8")
+            good.write_text("invoice-chaser is over budget.\n", encoding="utf-8")
             bad.write_text("invoice-chaser saved $5.\n", encoding="utf-8")
             js = str(Path(self.tmp.name) / "cost_check.json")
             with contextlib.redirect_stdout(io.StringIO()):
@@ -734,7 +750,7 @@ class House(unittest.TestCase):
     def test_versions_agree(self):
         plugin = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]
         skill = re.search(r'version: "([^"]+)"', (SKILL / "SKILL.md").read_text(encoding="utf-8")).group(1)
-        self.assertEqual({plugin, skill, check.VERSION}, {"0.2.0"})
+        self.assertEqual({plugin, skill, check.VERSION}, {"0.3.0"})
 
     def test_fixture_prices_are_marked_illustrative(self):
         data = json.loads((ACME / "pricing.json").read_text(encoding="utf-8"))

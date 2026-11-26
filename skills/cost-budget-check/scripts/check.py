@@ -13,10 +13,10 @@ check computes, in code, from the usage and the pricing table:
   price per token   priced cost / all tokens, so cheaper cache reads lower it
   cost per task     priced cost / tasks, against tokens per task x price per token
 
-Each line gets one status word against its budget:
-  landed   at or under budget
-  watch    over budget by no more than the tolerance (default 10%)
-  stalled  over budget by more than the tolerance
+Each line gets one of two words against its budget:
+  within budget   at or under budget
+  over budget     over budget
+landed, watch and stalled are a bet's status, set only by did-it-land, so no budget line uses them.
 
 Drift is the cost over budget: priced cost minus tasks x budgeted cost per task. It is split by
 model as each model's cost minus its share (by tokens) of the budget, so the parts add up to the
@@ -27,7 +27,8 @@ Writes OUT/cost_check.json (every figure, with its formula and sources), OUT/cos
 page for leaders, in the Leader Report's style) and OUT/cost_check.md (its plain-text twin). With
 --landing DIR it also writes the cost key of DIR/<bet>.json, the Landing Loop record, and leaves every
 other key as it found it.
-Exit code 0, or 2 when --fail-on is set and a feature reaches that status. Errors exit 1.
+Exit code 0, or 2 when --fail-on over-budget is set and a line is over budget by more than --tolerance
+(default 0). Errors exit 1.
 
 This script reads files and writes files. It makes no network calls.
 
@@ -56,16 +57,16 @@ import pricing as pricing_mod  # noqa: E402
 import readers  # noqa: E402
 
 TOOL = "cost-budget-check"
-VERSION = "0.2.0"
-RANK = {"landed": 0, "watch": 1, "stalled": 2}
+VERSION = "0.3.0"
+WITHIN = "within budget"
+OVER = "over budget"
 RECONCILE_TOLERANCE = 0.02
 Json = dict[str, Any]
 
 
-def status(actual: float, budget: float, tolerance: float) -> str:
-    if actual <= budget:
-        return "landed"
-    return "watch" if actual <= budget * (1 + tolerance) else "stalled"
+def status(actual: float, budget: float) -> str:
+    """A budget line's word. Never landed, watch or stalled: those are a bet's status, set by did-it-land."""
+    return WITHIN if actual <= budget else OVER
 
 
 def fmt_tokens(v: float) -> str:
@@ -318,7 +319,7 @@ def run(args: argparse.Namespace) -> Json:
             "actual": ppt,
             "actual_display": ledger.add(f"{name}.price_per_token", f"{name} price per token", ppt, fmt_price(ppt), "priced cost / tokens", src),
             "over": ppt / b.price_per_token - 1,
-            "status": status(ppt, b.price_per_token, args.tolerance),
+            "status": status(ppt, b.price_per_token),
         }
         f["checks"]["price_per_token"]["over_display"] = ledger.add(
             f"{name}.price_per_token.over", f"{name} price per token against budget", f["checks"]["price_per_token"]["over"], fmt_pct(f["checks"]["price_per_token"]["over"]), "actual / budget - 1", src + [b.source]
@@ -341,7 +342,7 @@ def run(args: argparse.Namespace) -> Json:
                     "actual": actual,
                     "actual_display": ledger.add(f"{name}.{key}", f"{name} {key.replace('_', ' ')}", actual, show(actual), formula, src + [task_source]),
                     "over": actual / budget - 1,
-                    "status": status(actual, budget, args.tolerance),
+                    "status": status(actual, budget),
                 }
                 c["over_display"] = ledger.add(f"{name}.{key}.over", f"{name} {key.replace('_', ' ')} against budget", c["over"], fmt_pct(c["over"]), "actual / budget - 1", src + [task_source, b.source])
                 f["checks"][key] = c
@@ -382,7 +383,7 @@ def run(args: argparse.Namespace) -> Json:
                     "drift_display": ledger.add(f"{mid}.drift", f"{name} cost over budget on {model}", mdrift, fmt_money(mdrift), "model cost - model token share x budgeted cost", src + [b.source]),
                 }
             )
-        f["status"] = max((c["status"] for c in f["checks"].values()), key=RANK.get)
+        f["status"] = OVER if any(c["status"] == OVER for c in f["checks"].values()) else WITHIN
         if prior_window:
             precs = [r for r in prior if r.feature == name]
             ptasks, psource, pgap, _ = task_count(task_csv, name, args.prior_window, precs)
@@ -472,7 +473,8 @@ def render(result: Json) -> str:
     out = [f"# Cost budget check, {result['window'] or 'all usage given'}", ""]
     if result.get("prior_window"):
         out.append(f"Prior window {result['prior_window']}, for the change in each line.")
-    out.append(f"As of {result['as_of']}. Tolerance {result['tolerance'] * 100:.0f}% over budget before a line is stalled.")
+    gate = f" The --fail-on gate lets a line run {result['tolerance'] * 100:.0f}% over budget." if result["tolerance"] else ""
+    out.append(f"As of {result['as_of']}.{gate}")
     out.append(f"Prices: {p['file']}, {p['source'].rstrip('.')}, retrieved {p['retrieved']}.{' Illustrative prices.' if p['illustrative'] else ''}")
     out.append("")
     since = bool(result.get("prior_window"))
@@ -570,8 +572,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--feature-map", action="append", default=[], help="RAW=FEATURE, to rename a key, workspace or tag (repeat)")
     ap.add_argument("--window", help="YYYY-MM-DD..YYYY-MM-DD; usage outside it is dropped")
     ap.add_argument("--as-of", help="YYYY-MM-DD; defaults to today")
-    ap.add_argument("--tolerance", type=float, default=0.10, help="share over budget still marked watch (default 0.10)")
-    ap.add_argument("--fail-on", choices=("watch", "stalled"), help="exit 2 when any feature reaches this status")
+    ap.add_argument("--tolerance", type=float, default=0.0, help="share over budget the --fail-on gate lets through (default 0); the line still reads over budget")
+    ap.add_argument("--fail-on", choices=("over-budget",), help="exit 2 when a line is over budget by more than --tolerance")
     ap.add_argument("--out", default="run")
     ap.add_argument("--stem", default="cost_check", help="file name for the outputs: STEM.html, STEM.md and STEM.json (default cost_check)")
     args = ap.parse_args(argv)
@@ -610,7 +612,7 @@ def main(argv: list[str] | None = None) -> int:
         except landing.LandingError as e:
             print(f"{TOOL}: {e}", file=sys.stderr)
             return 1
-    if args.fail_on and any(RANK[f.get("status", "landed")] >= RANK[args.fail_on] for f in result["features"]):
+    if args.fail_on and any(c["over"] > args.tolerance for f in result["features"] for c in f["checks"].values()):
         return 2
     return 0
 

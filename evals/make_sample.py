@@ -8,7 +8,7 @@ landing-loop repository: 9,000 tokens per task at $0.000003 a token.
 The story, two weeks against the two before:
   18 to 31 October   20 quotes a day on vendor-a/large, about 8,400 tokens each. Within budget.
   1 to 14 November   the prompt now carries a longer price-book excerpt, so each quote uses about 10,300
-                     tokens (tokens per task stalled). From 8 November, one quote in five for large jobs
+                     tokens (tokens per task over budget). From 8 November, one quote in five for large jobs
                      goes to vendor-a/xl, which costs twice as much a token, so cost per task drifts over
                      budget and the driver is vendor-a/xl.
 

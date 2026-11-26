@@ -1,10 +1,10 @@
 {
   "tool": "cost-budget-check",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "as_of": "2026-11-15",
   "window": "2026-11-01..2026-11-14",
   "prior_window": "2026-10-18..2026-10-31",
-  "tolerance": 0.1,
+  "tolerance": 0.0,
   "pricing": {
     "file": "pricing.json",
     "source": "Illustrative prices for the Acme sample. Not any provider's list price.",
@@ -31,7 +31,7 @@
           "actual": 3.2775728155339805e-06,
           "actual_display": "$0.00000328",
           "over": 0.09252427184466017,
-          "status": "watch",
+          "status": "over budget",
           "over_display": "+9.3%",
           "prior": 2.5178571428571425e-06,
           "prior_display": "$0.00000252",
@@ -44,7 +44,7 @@
           "actual": 10300.0,
           "actual_display": "10,300",
           "over": 0.14444444444444438,
-          "status": "stalled",
+          "status": "over budget",
           "over_display": "+14.4%",
           "prior": 8400.0,
           "prior_display": "8,400",
@@ -57,7 +57,7 @@
           "actual": 0.033759,
           "actual_display": "$0.0338",
           "over": 0.2503333333333333,
-          "status": "stalled",
+          "status": "over budget",
           "over_display": "+25.0%",
           "prior": 0.02115,
           "prior_display": "$0.0211",
@@ -107,7 +107,7 @@
       "drift": 1.8925200000000002,
       "drift_basis": "priced cost - tasks x budgeted cost per task",
       "drift_display": "$1.89",
-      "status": "stalled"
+      "status": "over budget"
     }
   ],
   "unbriefed": [],
