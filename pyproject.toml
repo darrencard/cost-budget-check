@@ -2,13 +2,13 @@
 name = "cost-budget-check"
 version = "0.1.0"
 description = "A skill that checks an AI feature's spend against its landing brief's cost budget."
-requires-python = ">=3.11"
+requires-python = ">=3.9"
 # Standard library only, on purpose: the scripts run inside sandboxes that cannot install packages.
 dependencies = []
 
 [tool.ruff]
 line-length = 240
-target-version = "py311"
+target-version = "py39"
 
 [tool.ruff.lint]
 # E, F: errors and unused names. I: import order. B: likely bugs. UP: old syntax.

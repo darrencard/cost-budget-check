@@ -28,7 +28,7 @@ Exit code 0, or 2 when --fail-on is set and a feature reaches that status. Error
 
 This script reads files and writes files. It makes no network calls.
 
-Standard library only. Runs on Python 3.11 or later.
+Standard library only. Runs on Python 3.9 or later.
 """
 
 from __future__ import annotations
@@ -159,6 +159,59 @@ def guard_double_count(records: list[readers.Record]) -> None:
         raise readers.InputError(f"{', '.join(both)} appears in both a provider CSV and a gateway log. Use one source per feature so no token counts twice.")
 
 
+def task_count(task_csv: dict, name: str, window: str | None, recs: list[readers.Record]) -> tuple[int | None, str | None, str | None, int | None]:
+    """(tasks, source, gap, succeeded) for one feature in one window: a dated tasks.csv row, an undated one, then task ids."""
+    for key in ((name, window or ""), (name, "")):
+        if key in task_csv:
+            tasks, source, succeeded = task_csv[key]
+            return tasks, source, None, succeeded
+    other = sorted(w for (n, w) in task_csv if n == name and w)
+    if other:
+        return None, None, f"tasks.csv counts {name} for {', '.join(other)}, not {window or 'the usage given'}, so tasks are not counted.", None
+    ids = {r.task_id for r in recs if r.task_id}
+    if ids and all(r.task_id for r in recs):
+        return len(ids), f"distinct task ids in {', '.join(sorted({r.file for r in recs}))}", None, None
+    if ids:
+        return None, None, f"{sum(1 for r in recs if not r.task_id)} of {len(recs)} requests have no task id, so tasks are not counted.", None
+    return None, None, None, None
+
+
+def prior_lines(f: Json, recs: list[readers.Record], tasks: int | None, task_source: str | None, table: pricing_mod.Pricing, ledger: Ledger, window: str, pricing_src: str) -> None:
+    """The same three lines for the prior window, and each line's change since then."""
+    name = f["feature"]
+    total = sum(sum(r.tokens.values()) for r in recs)
+    if not total:
+        f["gaps"].append(f"no usage in the prior window {window}, so there is no change to show.")
+        return
+    cost = sum(table.rate_for(r.model).cost(r.tokens) for r in recs)
+    files = sorted({r.file for r in recs}) + [pricing_src]
+    values = {"price_per_token": (cost / total, fmt_price, "priced cost / tokens")}
+    if tasks:
+        values["tokens_per_task"] = (total / tasks, fmt_tokens, "tokens / tasks")
+        values["cost_per_task"] = (cost / tasks, fmt_task_cost, "priced cost / tasks")
+    elif "tokens_per_task" in f["checks"]:
+        f["gaps"].append(f"no task count for the prior window {window}, so only price per token has a change.")
+    for key, (value, show, formula) in values.items():
+        c = f["checks"].get(key)
+        if not c:
+            continue
+        sources = files + ([task_source] if task_source and key != "price_per_token" else [])
+        c["prior"] = value
+        c["prior_display"] = ledger.add(f"{name}.prior.{key}", f"{name} {key.replace('_', ' ')}, prior window", value, show(value), formula + f", {window}", sources)
+        c["change"] = c["actual"] / value - 1
+        c["change_display"] = ledger.add(f"{name}.{key}.change", f"{name} {key.replace('_', ' ')} since the prior window", c["change"], fmt_pct(c["change"]), "this window / prior window - 1", sources)
+
+
+def write_pricing_template(path: Path, records: list[readers.Record]) -> int:
+    """A pricing table with one row per model in the usage. Prices are null, so it is refused until filled."""
+    models = sorted({r.model for r in records if r.model})
+    row = dict.fromkeys(pricing_mod.TOKEN_TYPES)
+    data = {"source": "", "retrieved": "", "currency": "USD", "models": [{"match": m, **row} for m in models]}
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    print(f"{TOOL}: wrote {path} with {len(models)} models. Fill source, retrieved and every price per million tokens from the provider's pricing page or your contract.")
+    return 0
+
+
 def run(args: argparse.Namespace) -> Json:
     as_of = datetime.date.fromisoformat(args.as_of) if args.as_of else datetime.date.today()
     window = parse_window(args.window) if args.window else None
@@ -169,9 +222,20 @@ def run(args: argparse.Namespace) -> Json:
         raise readers.InputError("no brief was given. Pass --brief FEATURE=PATH for each feature.")
     table = pricing_mod.load(Path(args.pricing))
     records, notes = gather(args)
+    all_records = records
     records = in_window(records, window)
+    prior_window = None
+    prior: list[readers.Record] = []
+    if args.prior_window:
+        if not window:
+            raise readers.InputError("--prior-window needs --window too.")
+        prior_window = parse_window(args.prior_window)
+        if prior_window[1] >= window[0]:
+            raise readers.InputError(f"the prior window {args.prior_window} must end before the window {args.window} starts.")
+        prior = in_window(all_records, prior_window)
+        guard_double_count(prior)
     guard_double_count(records)
-    unpriced = sorted({r.model or "(blank)" for r in records if table.rate_for(r.model) is None})
+    unpriced = sorted({r.model or "(blank)" for r in records + prior if table.rate_for(r.model) is None})
     if unpriced:
         raise pricing_mod.PricingError(f"{table.file} has no price for {', '.join(unpriced)}. Add a row for each; there is no default rate.")
     task_csv = readers.read_tasks(Path(args.tasks), pairs(args.feature_map, "--feature-map")) if args.tasks else {}
@@ -205,15 +269,9 @@ def run(args: argparse.Namespace) -> Json:
             f["gaps"].append("no usage in the window. Check the feature tag, the window or the export.")
             features.append(f)
             continue
-        tasks, task_source = None, None
-        if name in task_csv:
-            tasks, task_source = task_csv[name]
-        else:
-            ids = {r.task_id for r in recs if r.task_id}
-            if ids and all(r.task_id for r in recs):
-                tasks, task_source = len(ids), f"distinct task ids in {', '.join(files)}"
-            elif ids:
-                f["gaps"].append(f"{sum(1 for r in recs if not r.task_id)} of {len(recs)} requests have no task id, so tasks are not counted.")
+        tasks, task_source, gap, succeeded = task_count(task_csv, name, args.window, recs)
+        if gap:
+            f["gaps"].append(gap)
         src = files + [pricing_src]
         f["tokens"] = {t: tokens[t] for t in pricing_mod.TOKEN_TYPES}
         f["tokens_display"] = ledger.add(f"{name}.tokens", f"{name} tokens", total, fmt_tokens(total), "input + output + cache read + cache write", files)
@@ -253,6 +311,10 @@ def run(args: argparse.Namespace) -> Json:
                 }
                 c["over_display"] = ledger.add(f"{name}.{key}.over", f"{name} {key.replace('_', ' ')} against budget", c["over"], fmt_pct(c["over"]), "actual / budget - 1", src + [task_source, b.source])
                 f["checks"][key] = c
+            if succeeded:
+                f["success_rate_display"] = ledger.add(f"{name}.success_rate", f"{name} tasks that succeeded", succeeded / tasks, f"{succeeded / tasks * 100:.1f}%", "succeeded / tasks", [task_source])
+                f["cost_per_success"] = cost / succeeded
+                f["cost_per_success_display"] = ledger.add(f"{name}.cost_per_success", f"{name} cost per successful task", cost / succeeded, fmt_task_cost(cost / succeeded), "priced cost / tasks that succeeded", src + [task_source])
             budget_total = tasks * budget_cpt
             drift_basis = "priced cost - tasks x budgeted cost per task"
         else:
@@ -287,6 +349,12 @@ def run(args: argparse.Namespace) -> Json:
                 }
             )
         f["status"] = max((c["status"] for c in f["checks"].values()), key=RANK.get)
+        if prior_window:
+            precs = [r for r in prior if r.feature == name]
+            ptasks, psource, pgap, _ = task_count(task_csv, name, args.prior_window, precs)
+            if pgap:
+                f["gaps"].append(pgap.replace("tasks are not counted", "prior tasks are not counted"))
+            prior_lines(f, precs, ptasks, psource, table, ledger, args.prior_window, pricing_src)
         stated = [r.stated_cost for r in recs]
         if all(s is not None for s in stated):
             gap = sum(stated) - cost
@@ -304,6 +372,7 @@ def run(args: argparse.Namespace) -> Json:
         "version": VERSION,
         "as_of": as_of.isoformat(),
         "window": args.window,
+        "prior_window": args.prior_window,
         "tolerance": args.tolerance,
         "pricing": {"file": table.file, "source": table.source, "retrieved": table.retrieved.isoformat(), "currency": table.currency, "illustrative": table.illustrative, "age_days": table.age_days(as_of)},
         "features": features,
@@ -342,16 +411,20 @@ LABEL = {"tokens_per_task": "Tokens per task", "price_per_token": "Price per tok
 def render(result: Json) -> str:
     p = result["pricing"]
     out = [f"# Cost budget check, {result['window'] or 'all usage given'}", ""]
+    if result.get("prior_window"):
+        out.append(f"Prior window {result['prior_window']}, for the change in each line.")
     out.append(f"As of {result['as_of']}. Tolerance {result['tolerance'] * 100:.0f}% over budget before a line is stalled.")
     out.append(f"Prices: {p['file']}, {p['source'].rstrip('.')}, retrieved {p['retrieved']}.{' Illustrative prices.' if p['illustrative'] else ''}")
     out.append("")
-    out.append("| Feature | Line | Budget | Actual | Against budget | Status |")
-    out.append("|---|---|---|---|---|---|")
+    since = bool(result.get("prior_window"))
+    out.append("| Feature | Line | Budget | Actual | Against budget |" + (" Prior | Since prior |" if since else "") + " Status |")
+    out.append("|---|---|---|---|---|" + ("---|---|" if since else "") + "---|")
     for f in result["features"]:
         for key in ("tokens_per_task", "price_per_token", "cost_per_task"):
             c = f["checks"].get(key)
             if c:
-                out.append(f"| {f['feature']} | {LABEL[key]} | {c['budget_display']} | {c['actual_display']} | {c['over_display']} | {c['status']} |")
+                extra = f" {c.get('prior_display', 'none')} | {c.get('change_display', 'none')} |" if since else ""
+                out.append(f"| {f['feature']} | {LABEL[key]} | {c['budget_display']} | {c['actual_display']} | {c['over_display']} |{extra} {c['status']} |")
         if not f["checks"]:
             out.append(f"| {f['feature']} | none checked | | | | |")
     out.append("")
@@ -368,6 +441,10 @@ def render(result: Json) -> str:
     else:
         out.append("**Driver:** none. No feature and model is over budget.")
         out.append("")
+    for f in result["features"]:
+        if f.get("cost_per_success_display"):
+            out.append(f"**{f['feature']}:** {f['success_rate_display']} of tasks succeeded, so cost per successful task is {f['cost_per_success_display']}. No budget line covers it; it is shown, not marked.")
+            out.append("")
     if "reconcile" in result:
         r = result["reconcile"]
         out.append(f"**Bill:** {r['billed_display']} billed, {r['priced_display']} priced from usage, {r['unattributed_display']} not in the usage given.")
@@ -388,10 +465,36 @@ def render(result: Json) -> str:
     return "\n".join(out) + "\n"
 
 
+SAMPLE = Path(__file__).resolve().parent.parent / "assets" / "acme"
+
+
+def demo_args(out: str) -> list[str]:
+    """The arguments for the bundled Acme sample: two features, one month, the month before, and a bill."""
+    a = SAMPLE
+    return [
+        "--brief", f"quote-drafter={a / 'briefs' / 'quote-drafter.md'}",
+        "--brief", f"invoice-chaser={a / 'briefs' / 'invoice-chaser.md'}",
+        "--pricing", str(a / "pricing.json"),
+        "--gateway-log", str(a / "gateway.jsonl"),
+        "--usage-csv", str(a / "usage.csv"),
+        "--tasks", str(a / "tasks.csv"),
+        "--finance", str(a / "finance.csv"),
+        "--feature-map", "acme-invoice-chaser=invoice-chaser",
+        "--feature-map", "acme-search=search-assist",
+        "--window", "2026-11-01..2026-11-30",
+        "--prior-window", "2026-10-01..2026-10-31",
+        "--as-of", "2026-12-01",
+        "--out", out,
+    ]  # fmt: skip
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Check AI feature spend against each landing brief's cost budget.")
     ap.add_argument("--brief", action="append", default=[], help="FEATURE=PATH to a landing brief (repeat per feature)")
-    ap.add_argument("--pricing", required=True, help="pricing table JSON with its own source and retrieved date")
+    ap.add_argument("--pricing", help="pricing table JSON with its own source and retrieved date")
+    ap.add_argument("--prior-window", help="YYYY-MM-DD..YYYY-MM-DD before --window; shows each line's change since then")
+    ap.add_argument("--write-pricing-template", metavar="PATH", help="write a pricing table listing every model in the usage, to fill in, and stop")
+    ap.add_argument("--demo", action="store_true", help="run on the bundled Acme sample (illustrative) and write to --out")
     ap.add_argument("--usage-csv", action="append", default=[], help="provider usage CSV (repeat)")
     ap.add_argument("--gateway-log", action="append", default=[], help="AI gateway log, JSON Lines or a JSON array (repeat)")
     ap.add_argument("--tasks", help="CSV of feature, tasks, source")
@@ -404,6 +507,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--fail-on", choices=("watch", "stalled"), help="exit 2 when any feature reaches this status")
     ap.add_argument("--out", default="run")
     args = ap.parse_args(argv)
+    if args.demo:
+        args = ap.parse_args(demo_args(args.out))
+    if args.write_pricing_template:
+        try:
+            records, _ = gather(args)
+        except readers.InputError as e:
+            print(f"{TOOL}: {e}", file=sys.stderr)
+            return 1
+        return write_pricing_template(Path(args.write_pricing_template), records)
+    if not args.pricing:
+        print(f"{TOOL}: --pricing is required. Run once with --write-pricing-template pricing.json to list the models to price.", file=sys.stderr)
+        return 1
     if not 0 <= args.tolerance < 1:
         print(f"{TOOL}: --tolerance must be from 0 to under 1.", file=sys.stderr)
         return 1

@@ -4,13 +4,14 @@
 Acme is an invented company: invoicing software for trades businesses, Series C, about 400 people,
 12 squads. Its AI assistant drafts quotes and chases invoices. Every figure here is illustrative.
 
-The story the fixture tells, for November 2026:
+The story the fixture tells, for November 2026 against October:
   quote-drafter   gateway log, 10 quotes a day, two requests each. The prompt grew to 13,500 tokens
-                  per task against a budget of 12,000 (stalled), but cache reads keep price per token
-                  and cost per task under budget (landed).
+                  per task against a budget of 12,000 (stalled), up from 11,500 in October, but cache
+                  reads keep price per token and cost per task under budget (landed).
   invoice-chaser  provider usage CSV. Tokens per task hold at budget, but from 16 November part of the
                   traffic moved to the large model, so price per token and cost per task go over
-                  budget (stalled). It is the driver, on vendor-a/large.
+                  budget (stalled). October ran on the small model only. It is the driver, on
+                  vendor-a/large.
   search-assist   a small spend with no landing brief.
 
 Run it again after changing it; the tests read the files it writes.
@@ -26,7 +27,7 @@ import datetime
 import json
 from pathlib import Path
 
-OUT = Path(__file__).resolve().parent / "fixtures" / "acme"
+OUT = Path(__file__).resolve().parent.parent / "skills" / "cost-budget-check" / "assets" / "acme"
 NOTE = "Illustrative: Acme is an invented company and every figure here is made up."
 
 
@@ -90,14 +91,15 @@ def main() -> None:
 
     # quote-drafter: one request writes the scope, a second, mostly cached, revises it.
     lines = []
-    start = datetime.datetime(2026, 10, 31, 9, 0, tzinfo=datetime.UTC)
-    for d in range(31):  # 31 October is outside the November window and must be dropped
+    start = datetime.datetime(2026, 10, 1, 9, 0, tzinfo=datetime.timezone.utc)  # noqa: UP017  (runs on 3.9)
+    for d in range(61):  # October is the prior window; 1 December is outside both and must be dropped
+        grown = d >= 31
         for q in range(10):
             at = start + datetime.timedelta(days=d, minutes=q * 7)
             task = f"quote-{at:%Y%m%d}-{q:02d}"
             for usage in (
-                {"prompt_tokens": 6500, "completion_tokens": 700, "prompt_tokens_details": {"cached_tokens": 0}},
-                {"prompt_tokens": 5600, "completion_tokens": 700, "prompt_tokens_details": {"cached_tokens": 4800}},
+                {"prompt_tokens": 6500 if grown else 5500, "completion_tokens": 700, "prompt_tokens_details": {"cached_tokens": 0}},
+                {"prompt_tokens": 5600 if grown else 4600, "completion_tokens": 700, "prompt_tokens_details": {"cached_tokens": 4800 if grown else 3800}},
             ):
                 lines.append(
                     json.dumps(
@@ -108,6 +110,10 @@ def main() -> None:
     (OUT / "gateway.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     rows = []
+    for d in range(1, 32):
+        date = f"2026-10-{d:02d}"
+        rows.append([date, "acme-invoice-chaser", "vendor-a/small", 5_000_000, 1_200_000, 2_500_000, 0, 9000])
+        rows.append([date, "acme-search", "vendor-b/mini-1", 200_000, 20_000, 0, 0, 400])
     for d in range(1, 31):
         date = f"2026-11-{d:02d}"
         if d < 16:
@@ -122,8 +128,10 @@ def main() -> None:
         w.writerows(rows)
     with (OUT / "tasks.csv").open("w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
-        w.writerow(["feature", "tasks", "source"])
-        w.writerow(["invoice-chaser", 90000, "invoice reminders sent in November 2026, from the billing events table"])
+        w.writerow(["feature", "tasks", "succeeded", "start", "end", "source"])
+        source = "invoice reminders sent, from the billing events table; succeeded passed the reminder eval"
+        w.writerow(["invoice-chaser", 90000, 86400, "2026-11-01", "2026-11-30", source])
+        w.writerow(["invoice-chaser", 93000, 89280, "2026-10-01", "2026-10-31", source])
     with (OUT / "finance.csv").open("w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(["line", "period", "plan", "actual"])

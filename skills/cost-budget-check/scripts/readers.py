@@ -22,7 +22,7 @@ cache_read_input_tokens) already count them apart. The rule used is printed for 
 
 These functions read files and return records. They make no network calls.
 
-Standard library only. Runs on Python 3.11 or later.
+Standard library only. Runs on Python 3.9 or later.
 """
 
 from __future__ import annotations
@@ -78,7 +78,7 @@ def day(value: Any) -> datetime.date | None:
         return None
     if isinstance(value, (int, float)):
         seconds = value / 1000 if value > 10_000_000_000 else value
-        return datetime.datetime.fromtimestamp(seconds, datetime.UTC).date()
+        return datetime.datetime.fromtimestamp(seconds, datetime.timezone.utc).date()  # noqa: UP017  (runs on 3.9)
     text = str(value).strip()
     try:
         return datetime.date.fromisoformat(text[:10])
@@ -234,10 +234,16 @@ def read_gateway(path: Path, feature_map: dict[str, str]) -> Read:
     return out
 
 
-def read_tasks(path: Path, feature_map: dict[str, str]) -> dict[str, tuple[int, str]]:
-    """{feature: (tasks, what was counted)} from a CSV with feature, tasks and source columns."""
+def read_tasks(path: Path, feature_map: dict[str, str]) -> dict[tuple[str, str], tuple[int, str, int | None]]:
+    """{(feature, window): (tasks, what was counted, tasks that succeeded)} from a CSV with feature, tasks and source.
+
+    Optional start and end columns (YYYY-MM-DD) say which window a count covers, so one file can hold
+    this window and the prior one. A row without them has window "" and is taken to cover the window
+    being checked. An optional succeeded column (tasks that met the feature's own success test, from
+    its evals or outcomes) gives cost per successful task.
+    """
     rows = list(csv.DictReader(text_of(path).splitlines()))
-    out: dict[str, tuple[int, str]] = {}
+    out: dict[tuple[str, str], tuple[int, str, int | None]] = {}
     for i, row in enumerate(rows, 2):
         where = f"{path.name} line {i}"
         lower = {(k or "").strip().lower(): (v or "").strip() for k, v in row.items()}
@@ -247,10 +253,17 @@ def read_tasks(path: Path, feature_map: dict[str, str]) -> dict[str, tuple[int, 
         tasks = whole(lower.get("tasks"), "tasks", where)
         if tasks == 0:
             raise InputError(f"{where}: tasks is 0. A feature with no tasks has no tokens per task; leave it out.")
+        succeeded = whole(lower["succeeded"], "succeeded", where) if lower.get("succeeded") else None
+        if succeeded is not None and succeeded > tasks:
+            raise InputError(f"{where}: succeeded ({succeeded}) is more than tasks ({tasks}).")
+        start, end = lower.get("start", ""), lower.get("end", "")
+        if bool(start) != bool(end) or (start and (day(start) is None or day(end) is None)):
+            raise InputError(f"{where}: start and end must both be YYYY-MM-DD, or both be empty.")
+        window = f"{start}..{end}" if start else ""
         name = feature_map.get(name, name)
-        if name in out:
-            raise InputError(f"{where}: {name} is counted twice. Keep one row per feature.")
-        out[name] = (tasks, f"{source} ({path.name})")
+        if (name, window) in out:
+            raise InputError(f"{where}: {name} is counted twice{' for ' + window if window else ''}. Keep one row per feature and window.")
+        out[(name, window)] = (tasks, f"{source} ({path.name}{', ' + window if window else ''})", succeeded)
     return out
 
 

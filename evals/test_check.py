@@ -12,7 +12,7 @@ Groups:
   Review     a written summary checked against the result, overclaims blocked
   House      repository rules: no em dashes, no banned words, version agreement
 
-Standard library only. Runs on Python 3.11 or later.
+Standard library only. Runs on Python 3.9 or later.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ import pricing  # noqa: E402
 import readers  # noqa: E402
 import review  # noqa: E402
 
-ACME = HERE / "fixtures" / "acme"
+ACME = SKILL / "assets" / "acme"
 WINDOW = "2026-11-01..2026-11-30"
 EM_DASH = chr(0x2014)
 
@@ -193,6 +193,10 @@ class Readers(unittest.TestCase):
         r = readers.read_gateway(p, {}).records[0]
         self.assertEqual((r.feature, r.tokens["input"], r.tokens["cache_read"], r.tokens["cache_write"]), ("x", 10, 90, 3))
 
+    def test_epoch_timestamps_are_read_as_utc_dates(self):
+        self.assertEqual(readers.day(1_793_534_400), datetime.date(2026, 11, 1))
+        self.assertEqual(readers.day(1_793_534_400_000), datetime.date(2026, 11, 1))
+
     def test_tasks_need_a_source(self):
         p = self.write("t.csv", "feature,tasks\nf,10\n")
         with self.assertRaisesRegex(readers.InputError, "source"):
@@ -221,7 +225,7 @@ class Acme(unittest.TestCase):
 
     def test_quote_drafter_tokens_over_budget_but_cache_keeps_cost_landed(self):
         q = self.f["quote-drafter"]
-        self.assertEqual(q["tasks"], 300)  # 31 October is outside the window
+        self.assertEqual(q["tasks"], 300)  # October and 1 December are outside the window
         self.assertAlmostEqual(q["checks"]["tokens_per_task"]["actual"], 13500)
         self.assertEqual(q["checks"]["tokens_per_task"]["status"], "stalled")
         self.assertEqual(q["checks"]["price_per_token"]["status"], "landed")
@@ -315,6 +319,86 @@ class Acme(unittest.TestCase):
             code, _, err = run_quiet(args)
             self.assertEqual(code, 1)
             self.assertIn("no price for vendor-b/mini-1", err)
+
+
+class Drift(unittest.TestCase):
+    """Round 2: the change since a prior window, the task window guard, the demo and the pricing template."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        code, cls.stdout, err = run_quiet(["--demo", "--out", cls.tmp.name])
+        if code != 0:
+            raise AssertionError(err)
+        cls.result = load_result(cls.tmp.name)
+        cls.f = {f["feature"]: f for f in cls.result["features"]}
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_demo_runs_on_the_bundled_sample(self):
+        self.assertIn("**Driver:** invoice-chaser on vendor-a/large", self.stdout)
+        self.assertIn("Since prior", self.stdout)
+
+    def test_change_since_the_prior_window(self):
+        q = self.f["quote-drafter"]["checks"]["tokens_per_task"]
+        self.assertAlmostEqual(q["prior"], 11500)
+        self.assertAlmostEqual(q["change"], 13500 / 11500 - 1)
+        i = self.f["invoice-chaser"]["checks"]["price_per_token"]
+        self.assertAlmostEqual(i["prior"] / (9.00 / 8_700_000), 1.0, places=12)
+
+    def test_prior_task_count_comes_from_its_own_dated_row(self):
+        c = self.f["invoice-chaser"]["checks"]["tokens_per_task"]
+        self.assertAlmostEqual(c["prior"], 31 * 8_700_000 / 93_000)
+
+    def test_a_task_count_for_another_window_is_not_used(self):
+        with tempfile.TemporaryDirectory() as d:
+            t = Path(d) / "tasks.csv"
+            t.write_text("feature,tasks,start,end,source\ninvoice-chaser,90000,2026-09-01,2026-09-30,reminders\n", encoding="utf-8")
+            args = acme_args(d)
+            args[args.index(str(ACME / "tasks.csv"))] = str(t)
+            run_quiet(args)
+            chaser = {x["feature"]: x for x in load_result(d)["features"]}["invoice-chaser"]
+            self.assertNotIn("tokens_per_task", chaser["checks"])
+            self.assertTrue(any("not 2026-11-01..2026-11-30" in g for g in chaser["gaps"]))
+
+    def test_prior_window_must_come_before(self):
+        with tempfile.TemporaryDirectory() as d:
+            code, _, err = run_quiet(acme_args(d, "--prior-window", "2026-11-15..2026-12-15"))
+            self.assertEqual(code, 1)
+            self.assertIn("must end before", err)
+
+    def test_pricing_template_lists_models_and_is_refused_until_filled(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "p.json"
+            with contextlib.redirect_stdout(io.StringIO()):
+                check.main(["--usage-csv", str(ACME / "usage.csv"), "--write-pricing-template", str(p)])
+            data = json.loads(p.read_text(encoding="utf-8"))
+            self.assertEqual([m["match"] for m in data["models"]], ["vendor-a/large", "vendor-a/small", "vendor-b/mini-1"])
+            with self.assertRaises(pricing.PricingError):
+                pricing.load(p)
+
+    def test_cost_per_successful_task(self):
+        i = self.f["invoice-chaser"]
+        self.assertAlmostEqual(i["cost_per_success"], 358.38 / 86_400)
+        self.assertEqual(i["success_rate_display"], "96.0%")
+        self.assertIn("cost per successful task is $0.0041", self.stdout)
+
+    def test_refuses_more_successes_than_tasks(self):
+        with tempfile.TemporaryDirectory() as d:
+            t = Path(d) / "t.csv"
+            t.write_text("feature,tasks,succeeded,source\nf,10,11,x\n", encoding="utf-8")
+            with self.assertRaisesRegex(readers.InputError, "more than tasks"):
+                readers.read_tasks(t, {})
+
+    def test_review_blocks_a_figure_borrowed_from_another_feature(self):
+        found = review.review(self.result, "quote-drafter is $88.29 over budget.")
+        self.assertEqual([f["rule"] for f in found], ["figure-not-computed"])
+
+    def test_the_since_prior_figures_pass_review(self):
+        text = "quote-drafter tokens per task is stalled at 13,500, +17.4% since the prior window (11,500).\n"
+        self.assertEqual([f["rule"] for f in review.review(self.result, text)], [])
 
 
 class Review(unittest.TestCase):

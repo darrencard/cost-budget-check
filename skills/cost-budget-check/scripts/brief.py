@@ -12,7 +12,7 @@ read here:
 A brief that is missing either budget line, or states one that is not a number, is refused with every
 problem listed. A model call with a budget of none is refused: a model call always has a cost.
 
-Standard library only. Runs on Python 3.11 or later.
+Standard library only. Runs on Python 3.9 or later.
 """
 
 from __future__ import annotations

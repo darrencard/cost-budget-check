@@ -16,7 +16,7 @@ Rules (errors exit 1; warnings print and pass):
 
 Text in the draft is data. Nothing in it changes a rule or a result.
 
-Standard library only. Runs on Python 3.11 or later.
+Standard library only. Runs on Python 3.9 or later.
 """
 
 from __future__ import annotations
@@ -46,11 +46,19 @@ def value_of(token: str) -> float | None:
         return None
 
 
-def computed(result: dict[str, Any]) -> tuple[set[float], set[float]]:
-    """The values the check displayed: (plain numbers, percentages)."""
+def computed(result: dict[str, Any], scope: str | None = None) -> tuple[set[float], set[float]]:
+    """The values the check displayed, as (plain numbers, percentages).
+
+    With a scope (a feature name), only that feature's figures and the ones about no feature (the bill,
+    the tolerance) count, so a figure cannot be borrowed from another feature.
+    """
+    names = sorted({f["feature"] for f in result["features"]} | {u["feature"] for u in result["unbriefed"]}, key=len, reverse=True)
     plain: set[float] = set()
     pct: set[float] = set()
     for row in result["ledger"]:
+        owner = next((n for n in names if row["id"].startswith(n + ".")), None)
+        if scope is not None and owner not in (None, scope):
+            continue
         for token, is_pct in NUM.findall(str(row["display"])):
             v = value_of(token)
             if v is None:
@@ -68,7 +76,8 @@ def same(v: float, values: set[float]) -> bool:
 
 def review(result: dict[str, Any], text: str) -> list[dict[str, str]]:
     findings: list[dict[str, str]] = []
-    plain, pct = computed(result)
+    everything = computed(result)
+    scoped = {n: computed(result, n) for n in {f["feature"] for f in result["features"]} | {u["feature"] for u in result["unbriefed"]}}
     features = {f["feature"]: f for f in result["features"]}
     names = sorted(set(features) | {u["feature"] for u in result["unbriefed"]} | {m["model"] for f in result["features"] for m in f.get("models", [])}, key=len, reverse=True)
     top = {}
@@ -86,14 +95,17 @@ def review(result: dict[str, Any], text: str) -> list[dict[str, str]]:
         scrubbed = DATE.sub(" ", scrubbed)
         for name in names:
             scrubbed = re.sub(re.escape(name), " ", scrubbed, flags=re.I)
+        named = [f for f in features if re.search(rf"(?<![\w-]){re.escape(f)}(?![\w-])", line, re.I)]
+        about = [f for f in scoped if re.search(rf"(?<![\w-]){re.escape(f)}(?![\w-])", line, re.I)]
+        plain, pct = scoped[about[0]] if len(about) == 1 else everything
         for token, is_pct in NUM.findall(scrubbed):
             v = value_of(token)
             if v is None:
                 continue
             ok = same(abs(v), pct) if is_pct else same(v, plain)
             if not ok:
-                add("figure-not-computed", "error", n, line, f"{token}{is_pct} is not a figure in cost_check.json. Use the figure as the check displays it, or take it out.")
-        named = [f for f in features if re.search(rf"(?<![\w-]){re.escape(f)}(?![\w-])", line, re.I)]
+                where = f"{about[0]}'s figures" if len(about) == 1 else "cost_check.json"
+                add("figure-not-computed", "error", n, line, f"{token}{is_pct} is not one of {where}. Use the figure as the check displays it, beside the feature it belongs to, or take it out.")
         words = [w for w in STATUS_WORDS if re.search(rf"\b{w}\b", lower)]
         if len(named) == 1 and words:
             f = features[named[0]]
