@@ -217,7 +217,7 @@ def prior_lines(f: Json, recs: list[readers.Record], tasks: int | None, task_sou
     if not total:
         f["gaps"].append(f"no usage in the prior window {window}, so there is no change to show.")
         return
-    cost = sum(table.rate_for(r.model).cost(r.tokens) for r in recs)
+    cost = math.fsum(table.rate_for(r.model).cost(r.tokens) for r in recs)
     files = sorted({r.file for r in recs}) + [pricing_src]
     values = {"price_per_token": (cost / total, fmt_price, "priced cost / tokens")}
     if tasks:
@@ -286,7 +286,7 @@ def run(args: argparse.Namespace) -> Json:
         files = sorted({r.file for r in recs})
         tokens = {t: sum(r.tokens.get(t, 0) for r in recs) for t in pricing_mod.ALL_TOKEN_TYPES}
         total = sum(tokens.values())
-        cost = sum(table.rate_for(r.model).cost(r.tokens) for r in recs)
+        cost = math.fsum(table.rate_for(r.model).cost(r.tokens) for r in recs)
         if name not in budgets:
             ledger.add(f"{name}.cost", f"{name} priced cost (no brief)", cost, fmt_money(cost), "sum of tokens x rate per token type", files + [pricing_src])
             unbriefed.append({"feature": name, "cost": cost, "cost_display": fmt_money(cost), "files": files})
@@ -365,7 +365,7 @@ def run(args: argparse.Namespace) -> Json:
         for model in sorted(per_model):
             mrecs = per_model[model]
             mtok = sum(sum(r.tokens.values()) for r in mrecs)
-            mcost = sum(table.rate_for(model).cost(r.tokens) for r in mrecs)
+            mcost = math.fsum(table.rate_for(model).cost(r.tokens) for r in mrecs)
             mdrift = mcost - (mtok / total) * budget_total if total else 0.0
             mid = f"{name}.{model}"
             f["models"].append(
@@ -391,7 +391,7 @@ def run(args: argparse.Namespace) -> Json:
             prior_lines(f, precs, ptasks, psource, table, ledger, args.prior_window, pricing_src)
         stated = [r.stated_cost for r in recs]
         if all(s is not None for s in stated):
-            gap = sum(stated) - cost
+            gap = math.fsum(stated) - cost
             f["stated_cost_gap_display"] = ledger.add(f"{name}.stated_cost_gap", f"{name} export cost minus priced cost", gap, fmt_money(gap), "sum of the export's own cost - priced cost", src)
             if cost and abs(gap) / cost > RECONCILE_TOLERANCE:
                 f["gaps"].append(f"the export's own cost differs from the priced cost by {f['stated_cost_gap_display']}. Check the pricing table against the invoice.")
@@ -440,7 +440,7 @@ def run(args: argparse.Namespace) -> Json:
         bill = (round(total, 2), lines, [Path(p).name for p in args.anthropic_cost + args.openai_costs])
     if bill:
         billed, lines, fsrc = bill
-        priced = sum(f.get("cost", 0.0) for f in features) + sum(u["cost"] for u in unbriefed)
+        priced = math.fsum([f.get("cost", 0.0) for f in features] + [u["cost"] for u in unbriefed])
         result["reconcile"] = {
             "billed": billed,
             "billed_display": ledger.add("bill.model_api", "billed model API spend", billed, fmt_money(billed), "sum of Model API actuals: " + "; ".join(lines), fsrc),
@@ -520,7 +520,7 @@ def render(result: Json) -> str:
     for n in result["notes"]:
         out.append(f"- Read: {n}")
     out.append("")
-    out.append("Every figure above is in cost_check.json with its formula and sources. The check shows where spend went against budget, not why.")
+    out.append("Every figure above is in the JSON beside this file, with its formula and sources. The check shows where spend went against budget, not why.")
     return "\n".join(out) + "\n"
 
 
@@ -573,6 +573,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--tolerance", type=float, default=0.10, help="share over budget still marked watch (default 0.10)")
     ap.add_argument("--fail-on", choices=("watch", "stalled"), help="exit 2 when any feature reaches this status")
     ap.add_argument("--out", default="run")
+    ap.add_argument("--stem", default="cost_check", help="file name for the outputs: STEM.html, STEM.md and STEM.json (default cost_check)")
     args = ap.parse_args(argv)
     if args.demo:
         keep = (["--landing", args.landing] if args.landing else []) + [x for b in args.bet for x in ("--bet", b)] + (["--fail-on", args.fail_on] if args.fail_on else [])
@@ -597,10 +598,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    (out / "cost_check.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    (out / f"{args.stem}.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     report = render(result)
-    (out / "cost_check.md").write_text(report, encoding="utf-8")
-    (out / "cost_check.html").write_text(page.render(result), encoding="utf-8")
+    (out / f"{args.stem}.md").write_text(report, encoding="utf-8")
+    (out / f"{args.stem}.html").write_text(page.render(result), encoding="utf-8")
     print(report, end="")
     if args.landing:
         try:

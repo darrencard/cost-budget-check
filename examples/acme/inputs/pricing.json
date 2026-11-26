@@ -1,0 +1,22 @@
+{
+  "source": "Illustrative prices for the Acme sample. Not any provider's list price.",
+  "retrieved": "2026-10-15",
+  "currency": "USD",
+  "illustrative": true,
+  "models": [
+    {
+      "match": "vendor-a/large",
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.3,
+      "cache_write": 3.75
+    },
+    {
+      "match": "vendor-a/xl",
+      "input": 6.0,
+      "output": 30.0,
+      "cache_read": 0.6,
+      "cache_write": 7.5
+    }
+  ]
+}

@@ -230,7 +230,7 @@ def read_gateway(path: Path, feature_map: dict[str, str]) -> Read:
                 kind="AI gateway log",
             )
         )
-    rule = f"{inclusive_count} of {len(objects)} requests counted cached tokens inside prompt tokens, so they were subtracted"
+    rule = f"{inclusive_count} of {len(objects)} requests counted cached tokens inside prompt tokens, so they were subtracted" if inclusive_count else "input and cache reads are counted apart"
     out.notes.append(f"{path.name}: {len(objects)} requests read as an AI gateway log; {rule}.")
     return out
 

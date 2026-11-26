@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -48,7 +49,8 @@ class Rate:
     def cost(self, tokens: dict[str, int]) -> float:
         if tokens.get("cache_write_1h") and self.cache_write_1h is None:
             raise PricingError(f"{self.match} has one-hour cache writes in the usage but no cache_write_1h price. Add it from the provider's pricing.")
-        return (sum(tokens.get(t, 0) * getattr(self, t) for t in TOKEN_TYPES) + tokens.get("cache_write_1h", 0) * (self.cache_write_1h or 0)) / PER
+        parts = [tokens.get(t, 0) * getattr(self, t) for t in TOKEN_TYPES] + [tokens.get("cache_write_1h", 0) * (self.cache_write_1h or 0)]
+        return math.fsum(parts) / PER  # fsum: the same total on every Python version
 
 
 @dataclass(frozen=True)

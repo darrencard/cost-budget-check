@@ -15,6 +15,7 @@ landing_brief.py parses the brief, the one format the Landing Loop shares. from_
 convert.py and collect.py, which it imports) reads the Anthropic and OpenAI admin cost exports, used
 here as the bill.
 
-assets/fonts.css holds the @font-face rules copied unchanged from the same commit's
-skills/product-engineering-update/assets/template.html (Geist, Geist Mono and Instrument Sans, SIL Open Font
-License), so the page renders in the Leader Report's type with no network.
+assets/leader-report-template.html is skills/product-engineering-update/assets/template.html from the same
+commit, byte-identical (sha256 e5740431ab5269606709d352d3d253325df740830e8316f06478873e71d430d0). scripts/page.py
+reads its style block (tokens and embedded Geist, Geist Mono and Instrument Sans, SIL Open Font License) at
+render time, so the page is in the same brand family as the Leader Report with no network.

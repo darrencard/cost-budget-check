@@ -1,0 +1,463 @@
+{
+  "tool": "cost-budget-check",
+  "version": "0.2.0",
+  "as_of": "2026-11-15",
+  "window": "2026-11-01..2026-11-14",
+  "prior_window": "2026-10-18..2026-10-31",
+  "tolerance": 0.1,
+  "pricing": {
+    "file": "pricing.json",
+    "source": "Illustrative prices for the Acme sample. Not any provider's list price.",
+    "retrieved": "2026-10-15",
+    "currency": "USD",
+    "illustrative": true,
+    "age_days": 31
+  },
+  "features": [
+    {
+      "feature": "quote-drafting",
+      "brief": "quote-drafting.md",
+      "brief_path": "examples/acme/briefs/quote-drafting.md",
+      "brief_sha256": "decbe39590cc57b3d47125722a8d43e445d33c8f2f525c00277b94b7937dc95f",
+      "metric": "Quote draft acceptance rate",
+      "line": "model call",
+      "files": [
+        "gateway.jsonl"
+      ],
+      "checks": {
+        "price_per_token": {
+          "budget": 3e-06,
+          "budget_display": "$0.00000300",
+          "actual": 3.2775728155339805e-06,
+          "actual_display": "$0.00000328",
+          "over": 0.09252427184466017,
+          "status": "watch",
+          "over_display": "+9.3%",
+          "prior": 2.5178571428571425e-06,
+          "prior_display": "$0.00000252",
+          "change": 0.301731047304276,
+          "change_display": "+30.2%"
+        },
+        "tokens_per_task": {
+          "budget": 9000.0,
+          "budget_display": "9,000",
+          "actual": 10300.0,
+          "actual_display": "10,300",
+          "over": 0.14444444444444438,
+          "status": "stalled",
+          "over_display": "+14.4%",
+          "prior": 8400.0,
+          "prior_display": "8,400",
+          "change": 0.22619047619047628,
+          "change_display": "+22.6%"
+        },
+        "cost_per_task": {
+          "budget": 0.027,
+          "budget_display": "$0.0270",
+          "actual": 0.033759,
+          "actual_display": "$0.0338",
+          "over": 0.2503333333333333,
+          "status": "stalled",
+          "over_display": "+25.0%",
+          "prior": 0.02115,
+          "prior_display": "$0.0211",
+          "change": 0.5961702127659574,
+          "change_display": "+59.6%"
+        }
+      },
+      "models": [
+        {
+          "model": "vendor-a/large",
+          "tokens": 2595600,
+          "tokens_display": "2,595,600",
+          "share": 0.9,
+          "share_display": "90.0%",
+          "cost": 7.733879999999999,
+          "cost_display": "$7.73",
+          "price_per_token_display": "$0.00000298",
+          "drift": 0.9298799999999998,
+          "drift_display": "$0.93"
+        },
+        {
+          "model": "vendor-a/xl",
+          "tokens": 288400,
+          "tokens_display": "288,400",
+          "share": 0.1,
+          "share_display": "10.0%",
+          "cost": 1.71864,
+          "cost_display": "$1.72",
+          "price_per_token_display": "$0.00000596",
+          "drift": 0.9626399999999999,
+          "drift_display": "$0.96"
+        }
+      ],
+      "gaps": [],
+      "tokens": {
+        "input": 728000,
+        "output": 392000,
+        "cache_read": 1764000,
+        "cache_write": 0
+      },
+      "tokens_display": "2,884,000",
+      "cost": 9.45252,
+      "cost_display": "$9.45",
+      "tasks": 280,
+      "tasks_source": "distinct task ids in gateway.jsonl",
+      "tasks_display": "280",
+      "drift": 1.8925200000000002,
+      "drift_basis": "priced cost - tasks x budgeted cost per task",
+      "drift_display": "$1.89",
+      "status": "stalled"
+    }
+  ],
+  "unbriefed": [],
+  "drivers": [
+    {
+      "feature": "quote-drafting",
+      "model": "vendor-a/xl",
+      "drift": 0.9626399999999999,
+      "drift_display": "$0.96"
+    },
+    {
+      "feature": "quote-drafting",
+      "model": "vendor-a/large",
+      "drift": 0.9298799999999998,
+      "drift_display": "$0.93"
+    }
+  ],
+  "notes": [
+    "gateway.jsonl: 560 requests read as an AI gateway log; input and cache reads are counted apart."
+  ],
+  "warnings": [],
+  "window_used": {
+    "from": "2026-11-01",
+    "to": "2026-11-14"
+  },
+  "ledger": [
+    {
+      "id": "quote-drafting.tokens",
+      "label": "quote-drafting tokens",
+      "value": 2884000,
+      "display": "2,884,000",
+      "formula": "input + output + cache read + cache write",
+      "sources": [
+        "gateway.jsonl"
+      ]
+    },
+    {
+      "id": "quote-drafting.cost",
+      "label": "quote-drafting priced cost",
+      "value": 9.45252,
+      "display": "$9.45",
+      "formula": "sum of tokens x rate per token type",
+      "sources": [
+        "gateway.jsonl",
+        "pricing.json (Illustrative prices for the Acme sample. Not any provider's list price., retrieved 2026-10-15)"
+      ]
+    },
+    {
+      "id": "quote-drafting.budget.price_per_token",
+      "label": "quote-drafting budget price per token",
+      "value": 3e-06,
+      "display": "$0.00000300",
+      "formula": "stated in the brief",
+      "sources": [
+        "quote-drafting.md"
+      ]
+    },
+    {
+      "id": "quote-drafting.price_per_token",
+      "label": "quote-drafting price per token",
+      "value": 3.2775728155339805e-06,
+      "display": "$0.00000328",
+      "formula": "priced cost / tokens",
+      "sources": [
+        "gateway.jsonl",
+        "pricing.json (Illustrative prices for the Acme sample. Not any provider's list price., retrieved 2026-10-15)"
+      ]
+    },
+    {
+      "id": "quote-drafting.price_per_token.over",
+      "label": "quote-drafting price per token against budget",
+      "value": 0.09252427184466017,
+      "display": "+9.3%",
+      "formula": "actual / budget - 1",
+      "sources": [
+        "gateway.jsonl",
+        "pricing.json (Illustrative prices for the Acme sample. Not any provider's list price., retrieved 2026-10-15)",
+        "quote-drafting.md"
+      ]
+    },
+    {
+      "id": "quote-drafting.tasks",
+      "label": "quote-drafting tasks",
+      "value": 280,
+      "display": "280",
+      "formula": "counted",
+      "sources": [
+        "distinct task ids in gateway.jsonl"
+      ]
+    },
+    {
+      "id": "quote-drafting.budget.tokens_per_task",
+      "label": "quote-drafting budget tokens per task",
+      "value": 9000.0,
+      "display": "9,000",
+      "formula": "stated in the brief",
+      "sources": [
+        "quote-drafting.md"
+      ]
+    },
+    {
+      "id": "quote-drafting.tokens_per_task",
+      "label": "quote-drafting tokens per task",
+      "value": 10300.0,
+      "display": "10,300",
+      "formula": "tokens / tasks",
+      "sources": [
+        "distinct task ids in gateway.jsonl",
+        "gateway.jsonl",
+        "pricing.json (Illustrative prices for the Acme sample. Not any provider's list price., retrieved 2026-10-15)"
+      ]
+    },
+    {
+      "id": "quote-drafting.tokens_per_task.over",
+      "label": "quote-drafting tokens per task against budget",
+      "value": 0.14444444444444438,
+      "display": "+14.4%",
+      "formula": "actual / budget - 1",
+      "sources": [
+        "distinct task ids in gateway.jsonl",
+        "gateway.jsonl",
+        "pricing.json (Illustrative prices for the Acme sample. Not any provider's list price., retrieved 2026-10-15)",
+        "quote-drafting.md"
+      ]
+    },
+    {
+      "id": "quote-drafting.budget.cost_per_task",
+      "label": "quote-drafting budget cost per task",
+      "value": 0.027,
+      "display": "$0.0270",
+      "formula": "tokens per task x price per token, both stated in the brief",
+      "sources": [
+        "quote-drafting.md"
+      ]
+    },
+    {
+      "id": "quote-drafting.cost_per_task",
+      "label": "quote-drafting cost per task",
+      "value": 0.033759,
+      "display": "$0.0338",
+      "formula": "priced cost / tasks",
+      "sources": [
+        "distinct task ids in gateway.jsonl",
+        "gateway.jsonl",
+        "pricing.json (Illustrative prices for the Acme sample. Not any provider's list price., retrieved 2026-10-15)"
+      ]
+    },
+    {
+      "id": "quote-drafting.cost_per_task.over",
+      "label": "quote-drafting cost per task against budget",
+      "value": 0.2503333333333333,
+      "display": "+25.0%",
+      "formula": "actual / budget - 1",
+      "sources": [
+        "distinct task ids in gateway.jsonl",
+        "gateway.jsonl",
+        "pricing.json (Illustrative prices for the Acme sample. Not any provider's list price., retrieved 2026-10-15)",
+        "quote-drafting.md"
+      ]
+    },
+    {
+      "id": "quote-drafting.drift",
+      "label": "quote-drafting cost over budget",
+      "value": 1.8925200000000002,
+      "display": "$1.89",
+      "formula": "priced cost - tasks x budgeted cost per task",
+      "sources": [
+        "distinct task ids in gateway.jsonl",
+        "gateway.jsonl",
+        "pricing.json (Illustrative prices for the Acme sample. Not any provider's list price., retrieved 2026-10-15)",
+        "quote-drafting.md"
+      ]
+    },
+    {
+      "id": "quote-drafting.vendor-a/large.tokens",
+      "label": "quote-drafting tokens on vendor-a/large",
+      "value": 2595600,
+      "display": "2,595,600",
+      "formula": "sum of all token types",
+      "sources": [
+        "gateway.jsonl"
+      ]
+    },
+    {
+      "id": "quote-drafting.vendor-a/large.share",
+      "label": "quote-drafting share of tokens on vendor-a/large",
+      "value": 0.9,
+      "display": "90.0%",
+      "formula": "model tokens / feature tokens",
+      "sources": [
+        "gateway.jsonl"
+      ]
+    },
+    {
+      "id": "quote-drafting.vendor-a/large.cost",
+      "label": "quote-drafting priced cost on vendor-a/large",
+      "value": 7.733879999999999,
+      "display": "$7.73",
+      "formula": "sum of tokens x rate per token type",
+      "sources": [
+        "gateway.jsonl",
+        "pricing.json (Illustrative prices for the Acme sample. Not any provider's list price., retrieved 2026-10-15)"
+      ]
+    },
+    {
+      "id": "quote-drafting.vendor-a/large.price_per_token",
+      "label": "quote-drafting price per token on vendor-a/large",
+      "value": 2.9796116504854366e-06,
+      "display": "$0.00000298",
+      "formula": "model cost / model tokens",
+      "sources": [
+        "gateway.jsonl",
+        "pricing.json (Illustrative prices for the Acme sample. Not any provider's list price., retrieved 2026-10-15)"
+      ]
+    },
+    {
+      "id": "quote-drafting.vendor-a/large.drift",
+      "label": "quote-drafting cost over budget on vendor-a/large",
+      "value": 0.9298799999999998,
+      "display": "$0.93",
+      "formula": "model cost - model token share x budgeted cost",
+      "sources": [
+        "gateway.jsonl",
+        "pricing.json (Illustrative prices for the Acme sample. Not any provider's list price., retrieved 2026-10-15)",
+        "quote-drafting.md"
+      ]
+    },
+    {
+      "id": "quote-drafting.vendor-a/xl.tokens",
+      "label": "quote-drafting tokens on vendor-a/xl",
+      "value": 288400,
+      "display": "288,400",
+      "formula": "sum of all token types",
+      "sources": [
+        "gateway.jsonl"
+      ]
+    },
+    {
+      "id": "quote-drafting.vendor-a/xl.share",
+      "label": "quote-drafting share of tokens on vendor-a/xl",
+      "value": 0.1,
+      "display": "10.0%",
+      "formula": "model tokens / feature tokens",
+      "sources": [
+        "gateway.jsonl"
+      ]
+    },
+    {
+      "id": "quote-drafting.vendor-a/xl.cost",
+      "label": "quote-drafting priced cost on vendor-a/xl",
+      "value": 1.71864,
+      "display": "$1.72",
+      "formula": "sum of tokens x rate per token type",
+      "sources": [
+        "gateway.jsonl",
+        "pricing.json (Illustrative prices for the Acme sample. Not any provider's list price., retrieved 2026-10-15)"
+      ]
+    },
+    {
+      "id": "quote-drafting.vendor-a/xl.price_per_token",
+      "label": "quote-drafting price per token on vendor-a/xl",
+      "value": 5.959223300970873e-06,
+      "display": "$0.00000596",
+      "formula": "model cost / model tokens",
+      "sources": [
+        "gateway.jsonl",
+        "pricing.json (Illustrative prices for the Acme sample. Not any provider's list price., retrieved 2026-10-15)"
+      ]
+    },
+    {
+      "id": "quote-drafting.vendor-a/xl.drift",
+      "label": "quote-drafting cost over budget on vendor-a/xl",
+      "value": 0.9626399999999999,
+      "display": "$0.96",
+      "formula": "model cost - model token share x budgeted cost",
+      "sources": [
+        "gateway.jsonl",
+        "pricing.json (Illustrative prices for the Acme sample. Not any provider's list price., retrieved 2026-10-15)",
+        "quote-drafting.md"
+      ]
+    },
+    {
+      "id": "quote-drafting.prior.price_per_token",
+      "label": "quote-drafting price per token, prior window",
+      "value": 2.5178571428571425e-06,
+      "display": "$0.00000252",
+      "formula": "priced cost / tokens, 2026-10-18..2026-10-31",
+      "sources": [
+        "gateway.jsonl",
+        "pricing.json (Illustrative prices for the Acme sample. Not any provider's list price., retrieved 2026-10-15)"
+      ]
+    },
+    {
+      "id": "quote-drafting.price_per_token.change",
+      "label": "quote-drafting price per token since the prior window",
+      "value": 0.301731047304276,
+      "display": "+30.2%",
+      "formula": "this window / prior window - 1",
+      "sources": [
+        "gateway.jsonl",
+        "pricing.json (Illustrative prices for the Acme sample. Not any provider's list price., retrieved 2026-10-15)"
+      ]
+    },
+    {
+      "id": "quote-drafting.prior.tokens_per_task",
+      "label": "quote-drafting tokens per task, prior window",
+      "value": 8400.0,
+      "display": "8,400",
+      "formula": "tokens / tasks, 2026-10-18..2026-10-31",
+      "sources": [
+        "distinct task ids in gateway.jsonl",
+        "gateway.jsonl",
+        "pricing.json (Illustrative prices for the Acme sample. Not any provider's list price., retrieved 2026-10-15)"
+      ]
+    },
+    {
+      "id": "quote-drafting.tokens_per_task.change",
+      "label": "quote-drafting tokens per task since the prior window",
+      "value": 0.22619047619047628,
+      "display": "+22.6%",
+      "formula": "this window / prior window - 1",
+      "sources": [
+        "distinct task ids in gateway.jsonl",
+        "gateway.jsonl",
+        "pricing.json (Illustrative prices for the Acme sample. Not any provider's list price., retrieved 2026-10-15)"
+      ]
+    },
+    {
+      "id": "quote-drafting.prior.cost_per_task",
+      "label": "quote-drafting cost per task, prior window",
+      "value": 0.02115,
+      "display": "$0.0211",
+      "formula": "priced cost / tasks, 2026-10-18..2026-10-31",
+      "sources": [
+        "distinct task ids in gateway.jsonl",
+        "gateway.jsonl",
+        "pricing.json (Illustrative prices for the Acme sample. Not any provider's list price., retrieved 2026-10-15)"
+      ]
+    },
+    {
+      "id": "quote-drafting.cost_per_task.change",
+      "label": "quote-drafting cost per task since the prior window",
+      "value": 0.5961702127659574,
+      "display": "+59.6%",
+      "formula": "this window / prior window - 1",
+      "sources": [
+        "distinct task ids in gateway.jsonl",
+        "gateway.jsonl",
+        "pricing.json (Illustrative prices for the Acme sample. Not any provider's list price., retrieved 2026-10-15)"
+      ]
+    }
+  ]
+}

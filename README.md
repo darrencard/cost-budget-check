@@ -42,6 +42,18 @@ invoice-chaser: 96.0% of tasks succeeded, so cost per successful task is $0.0041
 Bill: $424.20 billed, $372.94 priced from usage, $51.26 not in the usage given.
 ```
 
+## Sample
+
+[examples/acme/cost-budget-check.html](examples/acme/cost-budget-check.html) follows Acme's `quote-drafting` bet through the Landing Loop. It uses the canonical brief, copied unchanged into `examples/acme/briefs/`, and two weeks of gateway usage with drift: tokens per task stalled, price per token watch, cost per task stalled, driver `vendor-a/xl`. The page has a Markdown twin (`cost-budget-check.md`), and `examples/acme/landing/quote-drafting.json` holds only the `cost` key. Every figure is illustrative.
+
+Regenerate it from the repository root (a test checks this command reproduces the committed files byte for byte):
+
+```bash
+python3 skills/cost-budget-check/scripts/check.py --brief quote-drafting=examples/acme/briefs/quote-drafting.md --pricing examples/acme/inputs/pricing.json --gateway-log examples/acme/inputs/gateway.jsonl --window 2026-11-01..2026-11-14 --prior-window 2026-10-18..2026-10-31 --as-of 2026-11-15 --out examples/acme --stem cost-budget-check --landing examples/acme/landing --bet quote-drafting=quote-drafting
+```
+
+`evals/make_sample.py` writes the sample's inputs.
+
 ## What you get
 
 | Feature | What it does | What it does for you |

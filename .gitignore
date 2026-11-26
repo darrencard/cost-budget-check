@@ -7,3 +7,4 @@ __pycache__/
 
 # Real runs on real data. Kept out of the repository.
 runs/
+dist/

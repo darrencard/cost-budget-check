@@ -600,6 +600,56 @@ def load_result_from_demo() -> dict:
         return load_result(d)
 
 
+def sample_command() -> list[str]:
+    """The one-line command in the README's Sample section, split into arguments."""
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    section = text[text.index("## Sample") :]
+    line = next(x for x in section.splitlines() if x.startswith("python3 skills/cost-budget-check/scripts/check.py"))
+    return line.split()[2:]
+
+
+class Sample(unittest.TestCase):
+    """The committed sample, examples/acme/, is what the README's command writes, byte for byte."""
+
+    def test_the_readme_command_reproduces_the_sample(self):
+        import os
+        import shutil
+
+        args = sample_command()
+        sample = ROOT / "examples" / "acme"
+        with tempfile.TemporaryDirectory() as d:
+            # The same command, run from the repository root, with its two output folders moved to a temporary one.
+            shutil.copytree(sample / "landing", Path(d) / "landing")
+            args[args.index("--out") + 1] = d
+            args[args.index("--landing") + 1] = str(Path(d) / "landing")
+            here = os.getcwd()
+            os.chdir(ROOT)
+            try:
+                code, _, err = run_quiet(args)
+            finally:
+                os.chdir(here)
+            self.assertEqual(code, 0, err)
+            for name in ("cost-budget-check.html", "cost-budget-check.md", "cost-budget-check.json", "landing/quote-drafting.json"):
+                self.assertEqual((Path(d) / name).read_bytes(), (sample / name).read_bytes(), f"{name} differs from the committed sample. Run the README's Sample command and commit.")
+
+    def test_the_sample_record_holds_only_the_cost_key(self):
+        rec = json.loads((ROOT / "examples" / "acme" / "landing" / "quote-drafting.json").read_text(encoding="utf-8"))
+        self.assertEqual(sorted(rec), ["bet", "brief", "cost", "schema"])
+        self.assertEqual(rec["bet"], "quote-drafting")
+        self.assertEqual(rec["cost"]["budget_status"], "stalled")
+        self.assertEqual(rec["cost"]["driver"]["model"], "vendor-a/xl")
+
+    def test_the_sample_page_uses_the_leader_report_stylesheet(self):
+        import hashlib
+
+        page_html = (ROOT / "examples" / "acme" / "cost-budget-check.html").read_text(encoding="utf-8")
+        template = (SKILL / "assets" / "leader-report-template.html").read_text(encoding="utf-8")
+        self.assertIn(template[template.index("<style>") + 7 : template.index("</style>")], page_html)
+        self.assertEqual(hashlib.sha256(template.encode("utf-8")).hexdigest(), "e5740431ab5269606709d352d3d253325df740830e8316f06478873e71d430d0")
+        for mark in ('class="sc-r"', 'class="bl"', 'class="pvr"', 'class="ill">Illustrative', 'class="facts"', '<span class="st stalled">stalled</span>'):
+            self.assertIn(mark, page_html)
+
+
 class Review(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
