@@ -1,0 +1,12 @@
+{
+  "name": "dacard-cost-budget-check",
+  "owner": { "name": "Dacard" },
+  "plugins": [
+    {
+      "name": "cost-budget-check",
+      "displayName": "Cost budget check",
+      "source": "./",
+      "description": "Check an AI feature's spend against its landing brief's cost budget, and name the feature and model behind any drift."
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "source": "Illustrative prices for the Acme fixture. Not any provider's list price.",
+  "retrieved": "2026-11-02",
+  "currency": "USD",
+  "illustrative": true,
+  "models": [
+    {
+      "match": "vendor-a/large",
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.3,
+      "cache_write": 3.75
+    },
+    {
+      "match": "vendor-a/small",
+      "input": 0.8,
+      "output": 4.0,
+      "cache_read": 0.08,
+      "cache_write": 1.0
+    },
+    {
+      "match": "vendor-b/mini*",
+      "input": 0.15,
+      "output": 0.6,
+      "cache_read": 0.075,
+      "cache_write": 0.15
+    }
+  ]
+}

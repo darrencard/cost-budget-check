@@ -1,0 +1,21 @@
+{
+  "source": "Replace with the provider's pricing page URL or your contract reference",
+  "retrieved": "2026-11-26",
+  "currency": "USD",
+  "models": [
+    {
+      "match": "provider/model-id",
+      "input": 0,
+      "output": 0,
+      "cache_read": 0,
+      "cache_write": 0
+    },
+    {
+      "match": "provider/model-family*",
+      "input": 0,
+      "output": 0,
+      "cache_read": 0,
+      "cache_write": 0
+    }
+  ]
+}
