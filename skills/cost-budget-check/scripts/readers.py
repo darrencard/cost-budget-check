@@ -30,6 +30,7 @@ from __future__ import annotations
 import csv
 import datetime
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -231,6 +232,144 @@ def read_gateway(path: Path, feature_map: dict[str, str]) -> Read:
         )
     rule = f"{inclusive_count} of {len(objects)} requests counted cached tokens inside prompt tokens, so they were subtracted"
     out.notes.append(f"{path.name}: {len(objects)} requests read as an AI gateway log; {rule}.")
+    return out
+
+
+def json_of(path: Path) -> Any:
+    try:
+        return json.loads(text_of(path))
+    except json.JSONDecodeError as e:
+        raise InputError(f"{path.name} is not valid JSON ({e.msg}, line {e.lineno}).") from None
+
+
+def read_anthropic_usage(path: Path, feature_map: dict[str, str]) -> Read:
+    """One page of the Anthropic Admin API usage report (GET /v1/organizations/usage_report/messages).
+
+    Fetch it grouped by model and by api_key_id or workspace_id, so each row names a model and a key or
+    workspace; --feature-map renames those ids to features. Cache creation is split into five-minute
+    and one-hour writes, which can bill at different rates.
+    """
+    data = json_of(path)
+    buckets = data.get("data") if isinstance(data, dict) else None
+    if not isinstance(buckets, list):
+        raise InputError(f"{path.name} has no data list. Save the usage_report/messages response as it stands.")
+    out = Read()
+    ungrouped = 0
+    for b, bucket in enumerate(buckets, 1):
+        when = day(bucket.get("starting_at"))
+        for n, r in enumerate(bucket.get("results") or [], 1):
+            where = f"{path.name} bucket {b} result {n}"
+            raw = r.get("workspace_id") or r.get("api_key_id") or ""
+            ungrouped += not raw
+            if not r.get("model"):
+                raise InputError(f"{where}: no model. Fetch the report with group_by[]=model so each row can be priced.")
+            creation = r.get("cache_creation") if isinstance(r.get("cache_creation"), dict) else {}
+            tokens = {
+                "input": whole(r.get("uncached_input_tokens"), "uncached input tokens", where),
+                "output": whole(r.get("output_tokens"), "output tokens", where),
+                "cache_read": whole(r.get("cache_read_input_tokens"), "cache read tokens", where),
+                "cache_write": whole(creation.get("ephemeral_5m_input_tokens"), "five-minute cache writes", where),
+                "cache_write_1h": whole(creation.get("ephemeral_1h_input_tokens"), "one-hour cache writes", where),
+            }
+            out.records.append(Record(when, feature_map.get(raw, raw) or "(none)", str(r["model"]), tokens, 0, None, None, path.name, "Anthropic usage report"))
+    out.notes.append(f"{path.name}: {len(out.records)} rows read as an Anthropic usage report; input, cache reads and both cache writes are counted apart.")
+    if ungrouped:
+        out.notes.append(f"{path.name}: {ungrouped} rows name no workspace or key, so they fall under (none). Group the report by api_key_id or workspace_id.")
+    return out
+
+
+def groups(data: Any) -> list[dict[str, Any]]:
+    """Every object in a response that carries token metrics, wherever it sits."""
+    if isinstance(data, dict):
+        if "input_tokens" in data or "inputTokens" in data:
+            return [data]
+        return [g for v in data.values() for g in groups(v)]
+    if isinstance(data, list):
+        return [g for v in data for g in groups(v)]
+    return []
+
+
+def read_vercel_gateway(path: Path, feature: str) -> Read:
+    """A Vercel AI Gateway usage response grouped by model, for one feature (one project).
+
+    Save the response of the gateway's usage query (the Vercel connector's get_ai_gateway_usage, with
+    groupBy aiModel and metrics cost, count, input_tokens, output_tokens) as JSON. Its input tokens
+    include any cached ones, with no split, so cached input is priced at the input rate here and the
+    gateway's own billed cost is kept beside it to compare.
+    """
+    data = json_of(path)
+    found = [g for g in groups(data) if g.get("aiModel") or g.get("model") or g.get("key")]
+    if not found:
+        raise InputError(f"{path.name} has no rows with a model and input_tokens. Query the usage grouped by aiModel with the token metrics.")
+    when = None
+    if isinstance(data, dict):
+        when = day(data.get("end") or data.get("until"))
+    out = Read()
+    for n, g in enumerate(found, 1):
+        where = f"{path.name} group {n}"
+        model = str(g.get("aiModel") or g.get("model") or g.get("key"))
+        tokens = {
+            "input": whole(g.get("input_tokens", g.get("inputTokens")), "input tokens", where),
+            "output": whole(g.get("output_tokens", g.get("outputTokens")), "output tokens", where),
+            "cache_read": 0,
+            "cache_write": 0,
+        }
+        out.records.append(Record(when, feature, model, tokens, whole(g.get("count"), "requests", where), None, money(g.get("cost"), where), path.name, "Vercel AI Gateway usage"))
+    out.notes.append(f"{path.name}: {len(found)} models read as Vercel AI Gateway usage for {feature}; the gateway gives no cache split, so cached input is priced at the input rate.")
+    return out
+
+
+DATED = re.compile(r"(\d{4}-\d{2}-\d{2})")
+
+
+def run_objects(paths: list[Path]) -> list[tuple[Path, str, Any]]:
+    """(file, key, record): a file holding one record, or a JSON object whose values are records (key is their name)."""
+    out = []
+    for path in paths:
+        data = json_of(path)
+        if isinstance(data, dict) and "usage" not in data and data and all(isinstance(v, dict) and "usage" in v for v in data.values()):
+            out += [(path, str(k), v) for k, v in data.items()]
+        else:
+            out.append((path, "", data))
+    return out
+
+
+def read_run_records(feature: str, paths: list[Path], cache_ttl: str = "5m") -> Read:
+    """Agent run records, one JSON file per task, each with a model and a usage block.
+
+    This is the shape Claude Code writes with --output-format json, and the shape the Leader Report's
+    eval runs keep: usage.input_tokens, output_tokens, cache_read_input_tokens and
+    cache_creation_input_tokens counted apart, and the run's own cost_usd or total_cost_usd. Each file is
+    one task, or, when a file is an object whose every value has a usage block, each value is one task.
+    Its date is the first YYYY-MM-DD in its path, if any. These records do not split cache writes by
+    duration, so cache_ttl says which they are: "5m" (the default) or "1h". Claude Code writes the
+    one-hour cache; the stated cost beside the priced cost shows which fits.
+    """
+    out = Read()
+    skipped = 0
+    for path, key, data in run_objects(paths):
+        usage = data.get("usage") if isinstance(data, dict) else None
+        if not isinstance(usage, dict) or not data.get("model"):
+            skipped += 1
+            continue
+        where = f"{path.name}#{key}" if key else path.name
+        tokens = {
+            "input": whole(usage.get("input_tokens"), "input tokens", where),
+            "output": whole(usage.get("output_tokens"), "output tokens", where),
+            "cache_read": whole(usage.get("cache_read_input_tokens"), "cache read tokens", where),
+            "cache_write": 0,
+            "cache_write_1h": 0,
+        }
+        tokens["cache_write_1h" if cache_ttl == "1h" else "cache_write"] = whole(usage.get("cache_creation_input_tokens"), "cache write tokens", where)
+        stated = usage.get("cost_usd", data.get("total_cost_usd"))
+        dated = DATED.search(str(path))
+        task = f"{path}#{key}" if key else str(path)
+        out.records.append(Record(day(dated.group(1)) if dated else None, feature, str(data["model"]), tokens, whole(usage.get("num_turns"), "turns", where), task, money(stated, where), path.name, "agent run records"))
+    if not out.records:
+        raise InputError(f"no run record for {feature} has a model and a usage block ({len(paths)} files looked at).")
+    ttl = "one-hour" if cache_ttl == "1h" else "five-minute"
+    skip = f"; {skipped} file{'s' if skipped != 1 else ''} with no usage block skipped" if skipped else ""
+    out.notes.append(f"{feature}: {len(out.records)} run records read, one task each, cache writes priced at the {ttl} rate{skip}.")
     return out
 
 

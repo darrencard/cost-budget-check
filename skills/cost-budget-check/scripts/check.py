@@ -23,7 +23,10 @@ model as each model's cost minus its share (by tokens) of the budget, so the par
 whole. The driver is the feature and model with the largest part. Without a task count only price
 per token is checked, and the gap is said, never estimated.
 
-Writes OUT/cost_check.json (every figure, with its formula and sources) and OUT/cost_check.md.
+Writes OUT/cost_check.json (every figure, with its formula and sources), OUT/cost_check.html (the
+page for leaders, in the Leader Report's style) and OUT/cost_check.md (its plain-text twin). With
+--landing DIR it also writes the cost key of DIR/<bet>.json, the Landing Loop record, and leaves every
+other key as it found it.
 Exit code 0, or 2 when --fail-on is set and a feature reaches that status. Errors exit 1.
 
 This script reads files and writes files. It makes no network calls.
@@ -35,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import glob
 import json
 import math
 import sys
@@ -44,12 +48,15 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import brief as brief_mod  # noqa: E402
+import brief as brief_mod  # noqa: E402  (puts vendor/ on the path)
+import from_ai_spend  # noqa: E402  (vendored from the Leader Report, see vendor/VENDORED.md)
+import landing  # noqa: E402
+import page  # noqa: E402
 import pricing as pricing_mod  # noqa: E402
 import readers  # noqa: E402
 
 TOOL = "cost-budget-check"
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 RANK = {"landed": 0, "watch": 1, "stalled": 2}
 RECONCILE_TOLERANCE = 0.02
 Json = dict[str, Any]
@@ -118,6 +125,16 @@ def pairs(items: list[str], what: str) -> dict[str, str]:
     return out
 
 
+def pairs_list(items: list[str], what: str) -> list[tuple[str, str]]:
+    out = []
+    for item in items:
+        if "=" not in item:
+            raise readers.InputError(f'{what} "{item}" is not FEATURE=VALUE.')
+        k, v = item.split("=", 1)
+        out.append((k.strip(), v.strip()))
+    return out
+
+
 def gather(args: argparse.Namespace) -> tuple[list[readers.Record], list[str]]:
     fmap = pairs(args.feature_map, "--feature-map")
     records: list[readers.Record] = []
@@ -130,8 +147,23 @@ def gather(args: argparse.Namespace) -> tuple[list[readers.Record], list[str]]:
         r = readers.read_gateway(Path(p), fmap)
         records += r.records
         notes += r.notes
+    for p in args.anthropic_usage:
+        r = readers.read_anthropic_usage(Path(p), fmap)
+        records += r.records
+        notes += r.notes
+    for feature, p in pairs_list(args.vercel_gateway, "--vercel-gateway"):
+        r = readers.read_vercel_gateway(Path(p), feature)
+        records += r.records
+        notes += r.notes
+    for feature, pattern in pairs_list(args.run_records, "--run-records"):
+        files = sorted(Path(x) for x in glob.glob(pattern, recursive=True) if Path(x).is_file())
+        if not files:
+            raise readers.InputError(f"--run-records {feature}={pattern} matches no files.")
+        r = readers.read_run_records(feature, files, args.run_records_cache_ttl)
+        records += r.records
+        notes += r.notes
     if not records:
-        raise readers.InputError("no usage was given. Pass --usage-csv or --gateway-log.")
+        raise readers.InputError("no usage was given. Pass --anthropic-usage, --vercel-gateway, --run-records, --usage-csv or --gateway-log.")
     return records, notes
 
 
@@ -149,7 +181,7 @@ def guard_double_count(records: list[readers.Record]) -> None:
     seen: dict[tuple, str] = {}
     for r in records:
         kinds[r.feature].add(r.kind)
-        if r.kind == "provider usage CSV":
+        if r.kind in ("provider usage CSV", "Anthropic usage report"):
             key = (r.feature, r.model, r.date)
             if key in seen and seen[key] != r.file:
                 raise readers.InputError(f"{r.feature} {r.model} on {r.date} is in both {seen[key]} and {r.file}. That would count it twice.")
@@ -170,7 +202,9 @@ def task_count(task_csv: dict, name: str, window: str | None, recs: list[readers
         return None, None, f"tasks.csv counts {name} for {', '.join(other)}, not {window or 'the usage given'}, so tasks are not counted.", None
     ids = {r.task_id for r in recs if r.task_id}
     if ids and all(r.task_id for r in recs):
-        return len(ids), f"distinct task ids in {', '.join(sorted({r.file for r in recs}))}", None, None
+        files = sorted({r.file for r in recs})
+        where = files[0] if len(files) == 1 else f"{len(files)} files ({files[0]} to {files[-1]})"
+        return len(ids), f"distinct task ids in {where}", None, None
     if ids:
         return None, None, f"{sum(1 for r in recs if not r.task_id)} of {len(recs)} requests have no task id, so tasks are not counted.", None
     return None, None, None, None
@@ -250,7 +284,7 @@ def run(args: argparse.Namespace) -> Json:
     for name in sorted(set(by_feature) | set(budgets)):
         recs = by_feature.get(name, [])
         files = sorted({r.file for r in recs})
-        tokens = {t: sum(r.tokens[t] for r in recs) for t in pricing_mod.TOKEN_TYPES}
+        tokens = {t: sum(r.tokens.get(t, 0) for r in recs) for t in pricing_mod.ALL_TOKEN_TYPES}
         total = sum(tokens.values())
         cost = sum(table.rate_for(r.model).cost(r.tokens) for r in recs)
         if name not in budgets:
@@ -258,7 +292,7 @@ def run(args: argparse.Namespace) -> Json:
             unbriefed.append({"feature": name, "cost": cost, "cost_display": fmt_money(cost), "files": files})
             continue
         b = budgets[name]
-        f: Json = {"feature": name, "brief": b.source, "line": b.line, "files": files, "checks": {}, "models": [], "gaps": []}
+        f: Json = {"feature": name, "brief": b.source, "brief_path": b.path, "brief_sha256": b.sha256, "metric": b.metric, "line": b.line, "files": files, "checks": {}, "models": [], "gaps": []}
         if b.line == "fixed code":
             f["gaps"].append("the brief puts this feature in fixed code, so it has no model budget to check.")
             if recs:
@@ -273,7 +307,7 @@ def run(args: argparse.Namespace) -> Json:
         if gap:
             f["gaps"].append(gap)
         src = files + [pricing_src]
-        f["tokens"] = {t: tokens[t] for t in pricing_mod.TOKEN_TYPES}
+        f["tokens"] = {t: tokens[t] for t in pricing_mod.ALL_TOKEN_TYPES if t in pricing_mod.TOKEN_TYPES or tokens[t]}
         f["tokens_display"] = ledger.add(f"{name}.tokens", f"{name} tokens", total, fmt_tokens(total), "input + output + cache read + cache write", files)
         f["cost"] = cost
         f["cost_display"] = ledger.add(f"{name}.cost", f"{name} priced cost", cost, fmt_money(cost), "sum of tokens x rate per token type", src)
@@ -385,10 +419,28 @@ def run(args: argparse.Namespace) -> Json:
         result["warnings"].append(f"the pricing table was retrieved {table.age_days(as_of)} days before the as-of date. Check the prices are still current.")
     if table.currency != "USD":
         result["warnings"].append(f"prices are in {table.currency}; figures are shown with $ but are in {table.currency}.")
+    bill = None
+    if args.finance and (args.anthropic_cost or args.openai_costs):
+        raise readers.InputError("pass the bill once: --finance, or --anthropic-cost and --openai-costs, not both.")
     if args.finance:
         billed, lines = readers.read_finance(Path(args.finance), args.finance_period)
+        bill = (billed, lines, [Path(args.finance).name])
+    elif args.anthropic_cost or args.openai_costs:
+        if not window:
+            raise readers.InputError("--anthropic-cost and --openai-costs need --window, to pick the cost buckets.")
+        lines, total = [], 0.0
+        for vendor, paths, label in (("anthropic", args.anthropic_cost, "Model API: Anthropic"), ("openai", args.openai_costs, "Model API: OpenAI")):
+            if paths:
+                try:
+                    amount = from_ai_spend.api_spend(paths, vendor, window[0], window[1])
+                except SystemExit as e:
+                    raise readers.InputError(str(e)) from None
+                total += amount
+                lines.append(f"{label} {fmt_money(amount)}, cost report buckets in {args.window}")
+        bill = (round(total, 2), lines, [Path(p).name for p in args.anthropic_cost + args.openai_costs])
+    if bill:
+        billed, lines, fsrc = bill
         priced = sum(f.get("cost", 0.0) for f in features) + sum(u["cost"] for u in unbriefed)
-        fsrc = [Path(args.finance).name]
         result["reconcile"] = {
             "billed": billed,
             "billed_display": ledger.add("bill.model_api", "billed model API spend", billed, fmt_money(billed), "sum of Model API actuals: " + "; ".join(lines), fsrc),
@@ -401,6 +453,13 @@ def run(args: argparse.Namespace) -> Json:
             result["warnings"].append("priced usage is above the bill. Check the pricing table and that no usage counts twice.")
         elif billed and (billed - priced) / billed > RECONCILE_TOLERANCE:
             result["warnings"].append(f"{result['reconcile']['unattributed_display']} of the bill is not in the usage given. Some spend has no feature tag or no export.")
+    dated = sorted(r.date for r in records if r.date)
+    if window:
+        result["window_used"] = {"from": window[0].isoformat(), "to": window[1].isoformat()}
+    elif dated:
+        result["window_used"] = {"from": dated[0].isoformat(), "to": dated[-1].isoformat()}
+    else:
+        result["window_used"] = {"from": None, "to": None}
     result["ledger"] = ledger.rows
     return result
 
@@ -498,6 +557,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--usage-csv", action="append", default=[], help="provider usage CSV (repeat)")
     ap.add_argument("--gateway-log", action="append", default=[], help="AI gateway log, JSON Lines or a JSON array (repeat)")
     ap.add_argument("--tasks", help="CSV of feature, tasks, source")
+    ap.add_argument("--anthropic-usage", action="append", default=[], help="Anthropic Admin API usage_report/messages page, grouped by model and key or workspace (repeat)")
+    ap.add_argument("--vercel-gateway", action="append", default=[], help="FEATURE=FILE, a Vercel AI Gateway usage response grouped by aiModel (repeat)")
+    ap.add_argument("--run-records", action="append", default=[], help="FEATURE=GLOB, agent run records with a usage block, one file per task (repeat)")
+    ap.add_argument("--run-records-cache-ttl", choices=("5m", "1h"), default="5m", help="which cache the run records' writes went to (Claude Code writes 1h); default 5m")
+    ap.add_argument("--anthropic-cost", action="append", default=[], help="Anthropic Admin API cost_report page, as the bill (repeat)")
+    ap.add_argument("--openai-costs", action="append", default=[], help="OpenAI /v1/organization/costs page, as the bill (repeat)")
+    ap.add_argument("--landing", metavar="DIR", help="write the cost key of DIR/<bet>.json, the Landing Loop record, for each briefed feature")
+    ap.add_argument("--bet", action="append", default=[], help="FEATURE=SLUG, the bet a feature's record is named for (default: the feature name)")
     ap.add_argument("--finance", help="finance.csv from the Leader Report's from_ai_spend.py, to reconcile against the bill")
     ap.add_argument("--finance-period", help="the finance.csv period label to use, when it holds several")
     ap.add_argument("--feature-map", action="append", default=[], help="RAW=FEATURE, to rename a key, workspace or tag (repeat)")
@@ -508,7 +575,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", default="run")
     args = ap.parse_args(argv)
     if args.demo:
-        args = ap.parse_args(demo_args(args.out))
+        keep = (["--landing", args.landing] if args.landing else []) + [x for b in args.bet for x in ("--bet", b)] + (["--fail-on", args.fail_on] if args.fail_on else [])
+        args = ap.parse_args(demo_args(args.out) + keep)
     if args.write_pricing_template:
         try:
             records, _ = gather(args)
@@ -532,7 +600,15 @@ def main(argv: list[str] | None = None) -> int:
     (out / "cost_check.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     report = render(result)
     (out / "cost_check.md").write_text(report, encoding="utf-8")
+    (out / "cost_check.html").write_text(page.render(result), encoding="utf-8")
     print(report, end="")
+    if args.landing:
+        try:
+            for path in landing.write(result, Path(args.landing), pairs(args.bet, "--bet")):
+                print(f"{TOOL}: wrote the cost key of {path}.")
+        except landing.LandingError as e:
+            print(f"{TOOL}: {e}", file=sys.stderr)
+            return 1
     if args.fail_on and any(RANK[f.get("status", "landed")] >= RANK[args.fail_on] for f in result["features"]):
         return 2
     return 0

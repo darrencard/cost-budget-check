@@ -25,6 +25,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 TOKEN_TYPES = ("input", "output", "cache_read", "cache_write")
+# One-hour cache writes bill above five-minute ones on some providers. Priced only where a table gives it.
+OPTIONAL_TYPES = ("cache_write_1h",)
+ALL_TOKEN_TYPES = TOKEN_TYPES + OPTIONAL_TYPES
 STALE_DAYS = 90
 PER = 1_000_000
 
@@ -40,9 +43,12 @@ class Rate:
     output: float
     cache_read: float
     cache_write: float
+    cache_write_1h: float | None = None
 
     def cost(self, tokens: dict[str, int]) -> float:
-        return sum(tokens.get(t, 0) * getattr(self, t) for t in TOKEN_TYPES) / PER
+        if tokens.get("cache_write_1h") and self.cache_write_1h is None:
+            raise PricingError(f"{self.match} has one-hour cache writes in the usage but no cache_write_1h price. Add it from the provider's pricing.")
+        return (sum(tokens.get(t, 0) * getattr(self, t) for t in TOKEN_TYPES) + tokens.get("cache_write_1h", 0) * (self.cache_write_1h or 0)) / PER
 
 
 @dataclass(frozen=True)
@@ -114,7 +120,12 @@ def load(path: Path) -> Pricing:
                 problems.append(f"{match}: {t} is {v!r}. Give a price per million tokens, 0 or more; every token type is priced separately.")
             else:
                 values[t] = float(v)
-        if len(values) == len(TOKEN_TYPES):
+        hour = row.get("cache_write_1h")
+        if hour is not None and (isinstance(hour, bool) or not isinstance(hour, (int, float)) or hour < 0):
+            problems.append(f"{match}: cache_write_1h is {hour!r}. Give a price per million tokens, or leave it out.")
+        elif hour is not None:
+            values["cache_write_1h"] = float(hour)
+        if all(t in values for t in TOKEN_TYPES):
             rates.append(Rate(match=match, **values))
     if problems:
         raise PricingError(f"{path.name}: the pricing table cannot be used:\n  " + "\n  ".join(problems))

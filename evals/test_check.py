@@ -34,6 +34,7 @@ sys.path.insert(0, str(SKILL / "scripts"))
 
 import brief  # noqa: E402
 import check  # noqa: E402
+import page  # noqa: E402
 import pricing  # noqa: E402
 import readers  # noqa: E402
 import review  # noqa: E402
@@ -75,9 +76,15 @@ def load_result(folder: str) -> dict:
 BRIEF = """## Landing brief
 
 - **Problem:** Quotes go out late.
+- **Metric:** Quotes sent within a day
+- **Bar:** 70%
+- **Better:** higher
+- **By:** 2026-12-31
+- **Non-goals:** No new pricing tiers.
 - **Tokens per task:** {tokens}
 - **Price per token:** {price}
 - **The line:** {line}
+- **Decides the next step:** Head of Product
 """
 
 
@@ -95,7 +102,7 @@ class Briefs(unittest.TestCase):
 
     def test_refuses_a_missing_line_and_says_so(self):
         with self.assertRaisesRegex(brief.BriefError, "price per token is missing"):
-            brief.parse("## Landing brief\n- **Tokens per task:** 100\n- **The line:** model call\n", "q", "q.md")
+            brief.parse(BRIEF.format(tokens="100", price="", line="model call").replace("- **Price per token:** \n", ""), "q", "q.md")
 
     def test_refuses_none_for_a_model_call(self):
         with self.assertRaisesRegex(brief.BriefError, "none, but the line is a model call"):
@@ -401,6 +408,179 @@ class Drift(unittest.TestCase):
         self.assertEqual([f["rule"] for f in review.review(self.result, text)], [])
 
 
+VENDORED = {
+    "landing_brief.py": "2d13573543c74ebe1bf001b97287287474a0ec298f34709a1bbfc643be051948",
+    "from_ai_spend.py": "4d29c095942f6613837ce5e04b986313faaea817e0db9cdd7a57becf40544536",
+    "convert.py": "f1d055c02e29c67690f3caac7b7eb3213afab20042ff78a8080ebf172b183a55",
+    "collect.py": "f58d3cd6db1fc7a5e73441618ed94460189aeb724be1c42934313d23d5bd93c4",
+}
+
+
+def write_json(folder: str, name: str, data) -> Path:
+    p = Path(folder) / name
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data), encoding="utf-8")
+    return p
+
+
+class LandingLoop(unittest.TestCase):
+    """0.2.0: the shared brief parser, the loop record, live readers, the bill, and the page."""
+
+    def test_vendored_files_are_unchanged_copies(self):
+        import hashlib
+
+        for name, digest in VENDORED.items():
+            got = hashlib.sha256((SKILL / "scripts" / "vendor" / name).read_bytes()).hexdigest()
+            self.assertEqual(got, digest, f"{name} changed. Copy it again from the Leader Report at a pinned commit and update the hash.")
+
+    def test_brief_is_parsed_by_the_shared_parser(self):
+        import landing_brief
+
+        text = (ACME / "briefs" / "quote-drafter.md").read_text(encoding="utf-8")
+        shared = landing_brief.parse(text)
+        ours = brief.load(ACME / "briefs" / "quote-drafter.md", "quote-drafter")
+        self.assertEqual((ours.tokens_per_task, ours.price_per_token, ours.line), (shared.tokens_per_task, shared.price_per_token, shared.line))
+        self.assertEqual(len(ours.sha256), 64)
+
+    def landing_run(self, d: str, *extra: str) -> tuple[int, str]:
+        code, _, err = run_quiet(["--demo", "--out", str(Path(d) / "out"), "--landing", str(Path(d) / "landing"), *extra])
+        return code, err
+
+    def test_cost_key_is_written_and_every_figure_has_its_fields(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.landing_run(d)[0], 0)
+            rec = json.loads((Path(d) / "landing" / "invoice-chaser.json").read_text(encoding="utf-8"))
+            self.assertEqual((rec["schema"], rec["bet"]), ("landing-loop/1", "invoice-chaser"))
+            self.assertEqual(len(rec["brief"]["sha256"]), 64)
+            cost = rec["cost"]
+            self.assertEqual(cost["tokens_per_task"]["unit"], "tokens per task")
+            self.assertEqual(cost["price_per_token"]["unit"], "USD per token")
+            self.assertEqual(sorted(cost["budget"]), ["price_per_token", "tokens_per_task"])
+            self.assertEqual(cost["driver"]["model"], "vendor-a/large")
+
+            def figures(o):
+                if isinstance(o, dict):
+                    if "value" in o:
+                        yield o
+                    else:
+                        for v in o.values():
+                            yield from figures(v)
+
+            found = list(figures(cost))
+            self.assertGreater(len(found), 10)
+            for fig in found:
+                self.assertEqual(sorted(fig), ["as_of", "source", "unit", "value", "window"])
+                self.assertTrue(fig["source"])
+                self.assertEqual(sorted(fig["window"]), ["from", "to"])
+
+    def test_other_keys_are_kept_exactly(self):
+        with tempfile.TemporaryDirectory() as d:
+            sha = brief.load(ACME / "briefs" / "quote-drafter.md", "quote-drafter").sha256
+            others = {"evals": {"tasks": {"value": 40}}, "landed": {"status": "watch"}, "spec": {"x": [1, 2]}}
+            write_json(d, "landing/quote-drafter.json", {"schema": "landing-loop/1", "bet": "quote-drafter", "brief": {"path": "p", "sha256": sha}, **others, "cost": {"old": True}})
+            self.assertEqual(self.landing_run(d)[0], 0)
+            rec = json.loads((Path(d) / "landing" / "quote-drafter.json").read_text(encoding="utf-8"))
+            for k, v in others.items():
+                self.assertEqual(rec[k], v)
+            self.assertEqual(rec["brief"]["path"], "p")
+            self.assertNotIn("old", rec["cost"])
+
+    def test_a_record_for_another_brief_is_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            write_json(d, "landing/quote-drafter.json", {"schema": "landing-loop/1", "bet": "quote-drafter", "brief": {"sha256": "0" * 64}})
+            code, err = self.landing_run(d)
+            self.assertEqual(code, 1)
+            self.assertIn("different brief", err)
+
+    def test_bet_must_be_a_slug(self):
+        with tempfile.TemporaryDirectory() as d:
+            code, err = self.landing_run(d, "--bet", "quote-drafter=Quote Drafter")
+            self.assertEqual(code, 1)
+            self.assertIn("not a slug", err)
+
+    def test_anthropic_usage_report_counts_both_cache_writes(self):
+        with tempfile.TemporaryDirectory() as d:
+            page = {
+                "data": [
+                    {
+                        "starting_at": "2026-11-02T00:00:00Z",
+                        "results": [
+                            {
+                                "model": "m",
+                                "workspace_id": "wrkspc_1",
+                                "uncached_input_tokens": 100,
+                                "output_tokens": 10,
+                                "cache_read_input_tokens": 1000,
+                                "cache_creation": {"ephemeral_5m_input_tokens": 50, "ephemeral_1h_input_tokens": 20},
+                            }
+                        ],
+                    }
+                ]
+            }
+            r = readers.read_anthropic_usage(write_json(d, "u.json", page), {"wrkspc_1": "f"}).records[0]
+            self.assertEqual(r.feature, "f")
+            self.assertEqual(r.tokens, {"input": 100, "output": 10, "cache_read": 1000, "cache_write": 50, "cache_write_1h": 20})
+            rate = pricing.Rate("m", 1, 2, 0.1, 1.25, 2.0)
+            self.assertAlmostEqual(rate.cost(r.tokens), (100 + 20 + 100 + 62.5 + 40) / 1e6)
+            with self.assertRaisesRegex(pricing.PricingError, "cache_write_1h"):
+                pricing.Rate("m", 1, 2, 0.1, 1.25).cost(r.tokens)
+
+    def test_vercel_gateway_usage_by_model(self):
+        with tempfile.TemporaryDirectory() as d:
+            resp = {"start": "2026-11-01", "end": "2026-11-30", "groups": [{"aiModel": "m", "cost": 1.5, "count": 10, "input_tokens": 1000, "output_tokens": 100}]}
+            out = readers.read_vercel_gateway(write_json(d, "v.json", resp), "f")
+            r = out.records[0]
+            self.assertEqual((r.feature, r.model, r.tokens["input"], r.stated_cost, r.date), ("f", "m", 1000, 1.5, datetime.date(2026, 11, 30)))
+            self.assertIn("no cache split", out.notes[0])
+
+    def test_run_records_both_shapes_and_cache_duration(self):
+        with tempfile.TemporaryDirectory() as d:
+            usage = {"input_tokens": 2, "output_tokens": 1923, "cache_read_input_tokens": 2393, "cache_creation_input_tokens": 19589, "cost_usd": 0.1956586}
+            one = write_json(d, "2026-11-25/judgments/a.json", {"model": "claude-opus-5-5", "usage": usage})
+            many = write_json(d, "2026-11-25/extractions.json", {"x": {"model": "m", "usage": usage}, "y": {"model": "m", "usage": usage}})
+            r = readers.read_run_records("judge", [one, many], "1h")
+            self.assertEqual(len(r.records), 3)
+            self.assertEqual(len({x.task_id for x in r.records}), 3)
+            self.assertEqual(r.records[0].tokens["cache_write_1h"], 19589)
+            self.assertEqual(r.records[0].date, datetime.date(2026, 11, 25))
+            # Opus 5.5 list prices (platform.claude.com pricing page, 2026-11-26): the one-hour rate matches the run's own cost.
+            opus = pricing.Rate("claude-opus-5-5", 4, 20, 0.2, 5, 8)
+            self.assertAlmostEqual(opus.cost(r.records[0].tokens), 0.1956586, places=9)
+
+    def test_bill_from_the_anthropic_cost_report_via_the_vendored_reader(self):
+        with tempfile.TemporaryDirectory() as d:
+            report = {"data": [{"starting_at": "2026-11-10T00:00:00Z", "results": [{"amount": "42000", "currency": "USD"}]}, {"starting_at": "2026-12-03T00:00:00Z", "results": [{"amount": "999", "currency": "USD"}]}]}
+            p = write_json(d, "cost.json", report)
+            args = [a for a in acme_args(d) if a != str(ACME / "finance.csv")]
+            args.remove("--finance")
+            run_quiet([*args, "--anthropic-cost", str(p)])
+            self.assertAlmostEqual(load_result(d)["reconcile"]["billed"], 420.00)
+
+    def test_page_is_self_contained_and_prints_every_status_word(self):
+        with tempfile.TemporaryDirectory() as d:
+            run_quiet(acme_args(d))
+            page = (Path(d) / "cost_check.html").read_text(encoding="utf-8")
+            self.assertNotRegex(page, r'(src|href)="https?://')
+            self.assertIn("@font-face", page)
+            self.assertIn('<span class="st stalled">stalled</span>', page)
+            self.assertIn('<span class="st landed">landed</span>', page)
+            self.assertIn("$88.29", page)
+
+    def test_page_renders_without_a_bill_and_escapes_text(self):
+        result = load_result_from_demo()
+        result.pop("reconcile")
+        result["features"][0]["gaps"].append('<script>alert("x")</script>')
+        html_text = page.render(result)
+        self.assertNotIn("<script>", html_text)
+        self.assertIn("&lt;script&gt;", html_text)
+
+
+def load_result_from_demo() -> dict:
+    with tempfile.TemporaryDirectory() as d:
+        run_quiet(["--demo", "--out", d])
+        return load_result(d)
+
+
 class Review(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -485,7 +665,7 @@ class House(unittest.TestCase):
     def test_versions_agree(self):
         plugin = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]
         skill = re.search(r'version: "([^"]+)"', (SKILL / "SKILL.md").read_text(encoding="utf-8")).group(1)
-        self.assertEqual({plugin, skill, check.VERSION}, {"0.1.0"})
+        self.assertEqual({plugin, skill, check.VERSION}, {"0.2.0"})
 
     def test_fixture_prices_are_marked_illustrative(self):
         data = json.loads((ACME / "pricing.json").read_text(encoding="utf-8"))
