@@ -7,7 +7,10 @@ The record is shared by the five Landing Loop skills and the Leader Report (sche
    "portfolio": {...}, "spec": {...}, "evals": {...}, "cost": {...}, "landed": {...}}
 
 This check writes only "cost". Every figure in it carries value, unit, source, window (from, to) and
-as_of. Tokens per task and price per token are two figures, each beside its budget from the brief.
+as_of. It is the single owner of cost per task, tokens per task and price per token in the loop: each
+sits at the top of the key as its own figure, with its budget from the brief under "budget", so eval-kit
+and the Leader Report cite them and compute none. A figure that could not be computed (no task count)
+is named under "not_checked" with the reason, and is absent, never estimated.
 
 A record already holding a different brief (by sha256) is refused: the cost would be checked against
 one brief and filed under another. A record with another schema is refused too.
@@ -27,6 +30,8 @@ from typing import Any
 SCHEMA = "landing-loop/1"
 KEY = "cost"
 SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,79}$")
+OWNED = ("cost_per_task", "tokens_per_task", "price_per_token")
+NOT_CHECKED = "no task count for this window, so this figure was not computed. Give a task count to cost-budget-check; do not compute it elsewhere."
 UNITS = {"tokens_per_task": "tokens per task", "price_per_token": "USD per token", "cost_per_task": "USD per task"}
 Json = dict[str, Any]
 
@@ -67,7 +72,13 @@ def cost_key(result: Json, f: Json) -> Json:
         key["tokens_per_task"] = key["lines"]["tokens_per_task"]["actual"]
     if "price_per_token" in key["lines"]:
         key["price_per_token"] = key["lines"]["price_per_token"]["actual"]
-    key["budget"] = {k: figure(c["budget"], UNITS[k], f"landing brief {f['brief']}", window, as_of) for k, c in f["checks"].items() if k in ("tokens_per_task", "price_per_token")}
+    if "cost_per_task" in key["lines"]:
+        key["cost_per_task"] = key["lines"]["cost_per_task"]["actual"]
+    # The three figures this check owns in the Landing Loop. A reader cites them from here and computes none.
+    key["not_checked"] = {k: NOT_CHECKED for k in OWNED if k not in key}
+    key["budget"] = {k: key["lines"][k]["budget"] for k in OWNED if k in key["lines"]}
+    if "cost" in f:
+        key["priced_cost"] = figure(f["cost"], "USD", ledger_source(result, f"{name}.cost"), window, as_of)
     if "drift" in f:
         key["over_budget"] = figure(f["drift"], "USD", ledger_source(result, f"{name}.drift"), window, as_of)
         drivers = [d for d in result["drivers"] if d["feature"] == name]

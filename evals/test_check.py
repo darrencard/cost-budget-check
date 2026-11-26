@@ -455,7 +455,14 @@ class LandingLoop(unittest.TestCase):
             cost = rec["cost"]
             self.assertEqual(cost["tokens_per_task"]["unit"], "tokens per task")
             self.assertEqual(cost["price_per_token"]["unit"], "USD per token")
-            self.assertEqual(sorted(cost["budget"]), ["price_per_token", "tokens_per_task"])
+            self.assertEqual(sorted(cost["budget"]), ["cost_per_task", "price_per_token", "tokens_per_task"])
+            self.assertEqual(cost["not_checked"], {})
+            cpt = cost["cost_per_task"]
+            self.assertEqual(sorted(cpt), ["as_of", "source", "unit", "value", "window"])
+            self.assertEqual(cpt["unit"], "USD per task")
+            self.assertAlmostEqual(cpt["value"], 358.38 / 90_000)
+            self.assertIn("priced cost / tasks", cpt["source"])
+            self.assertAlmostEqual(cost["budget"]["cost_per_task"]["value"], 3000 * 1.2e-6)
             self.assertEqual(cost["driver"]["model"], "vendor-a/large")
 
             def figures(o):
@@ -472,6 +479,18 @@ class LandingLoop(unittest.TestCase):
                 self.assertEqual(sorted(fig), ["as_of", "source", "unit", "value", "window"])
                 self.assertTrue(fig["source"])
                 self.assertEqual(sorted(fig["window"]), ["from", "to"])
+
+    def test_without_a_task_count_cost_per_task_is_named_not_estimated(self):
+        with tempfile.TemporaryDirectory() as d:
+            args = acme_args(d)
+            i = args.index("--tasks")
+            del args[i : i + 2]
+            run_quiet([*args, "--landing", str(Path(d) / "landing")])
+            cost = json.loads((Path(d) / "landing" / "invoice-chaser.json").read_text(encoding="utf-8"))["cost"]
+            self.assertNotIn("cost_per_task", cost)
+            self.assertNotIn("tokens_per_task", cost)
+            self.assertEqual(sorted(cost["not_checked"]), ["cost_per_task", "tokens_per_task"])
+            self.assertIn("price_per_token", cost)
 
     def test_other_keys_are_kept_exactly(self):
         with tempfile.TemporaryDirectory() as d:

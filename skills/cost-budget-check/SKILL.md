@@ -78,7 +78,7 @@ It writes `run/cost_check.html` (one self-contained page in the Leader Report's 
 - **Spend with no brief** is listed with its priced cost and no status.
 - **The bill:** billed spend minus priced usage is shown as spend not in the usage given. A gap over 2% is a warning.
 - **A pricing table over 90 days old** at the as-of date is a warning.
-- **The loop record's `cost` key** holds tokens per task and price per token as two figures, each beside its budget from the brief, plus cost per task, cost over budget and the driver. Every figure carries value, unit, source, window and as_of. Its `budget_status` words are against the cost budget only; whether the bet landed is did-it-land's call, not this check's.
+- **The loop record's `cost` key** is the single owner of cost per task, tokens per task and price per token in the Landing Loop. Each sits at the top of the key as its own figure, with its budget from the brief under `budget`, plus priced cost, cost over budget and the driver. eval-kit and the Leader Report cite these and compute none. A figure that could not be computed (no task count) is listed under `not_checked` with the reason, never estimated. Every figure carries value, unit, source, window and as_of. Its `budget_status` words are against the cost budget only; whether the bet landed is did-it-land's call, not this check's.
 
 ## Hand over the result
 
