@@ -1,6 +1,6 @@
 {
   "tool": "cost-budget-check",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "as_of": "2026-11-15",
   "window": "2026-11-01..2026-11-14",
   "prior_window": "2026-10-18..2026-10-31",

@@ -807,7 +807,7 @@ class Visual(unittest.TestCase):
         self.assertEqual(meta, "Cost budget check")
         public, fold = self.page.split("For your engineers", 1)
         self.assertNotIn("cost-budget-check", svgkit.page_text(public).lower())
-        self.assertIn("cost-budget-check 0.3.3", fold)
+        self.assertIn("cost-budget-check 0.3.4", fold)
 
     def test_models_are_named_by_price(self):
         self.assertEqual(page.model_names(self.result), {"vendor-a/xl": "the large model", "vendor-a/large": "the standard model"})
@@ -937,7 +937,7 @@ class House(unittest.TestCase):
     def test_versions_agree(self):
         plugin = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]
         skill = re.search(r'version: "([^"]+)"', (SKILL / "SKILL.md").read_text(encoding="utf-8")).group(1)
-        self.assertEqual({plugin, skill, check.VERSION}, {"0.3.3"})
+        self.assertEqual({plugin, skill, check.VERSION}, {"0.3.4"})
 
     def test_fixture_prices_are_marked_illustrative(self):
         data = json.loads((ACME / "pricing.json").read_text(encoding="utf-8"))

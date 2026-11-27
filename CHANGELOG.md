@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.4, 2026-11-27
+
+- Full column: the heading, the intro, the next step, section text and captions run the full width of the content column, the same width as the scorecard frame (the site's rule since 2026-11-25). The page's own CSS drops its caps on text (the heading's 22ch and the folds' 80ch) and overrides the vendored template's 62ch intro and svgkit's 76ch caption after their rules, so neither hash-pinned file changes. The heading balances its lines; text breaks with `text-wrap: pretty`. A test checks the page CSS caps no text and the sample carries the override.
+
 ## 0.3.3, 2026-11-27
 
 - The picture is scorecard rows in the grammar of the /update outcome scorecard, drawn with svgkit 1.2.0 (vendored byte-identical, pinned at landing-loop 78784ef). One frame, one row per budget line (AI usage per task, AI price per unit, cost per task): paired bars, budget grey above actual ink, each row on its own scale, the part over budget hatched; the figure `budget → actual · over` (`9,000 → 10,300 · +14.4%`); the contract's words, OVER BUDGET in ink or WITHIN BUDGET muted, as text. Then one row per model, its share of the budget against its cost, on one scale for the models. Geist Mono 12px for labels, figures and words, Geist 14px for names; no text inside any picture. The wide and phone SVG variants and the card around them are gone.

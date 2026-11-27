@@ -4,7 +4,7 @@ description: Checks an AI feature's model spend against the cost budget in its l
 license: MIT. See LICENSE in the repository root.
 metadata:
   author: Dacard
-  version: "0.3.3"
+  version: "0.3.4"
 ---
 
 # Cost budget check

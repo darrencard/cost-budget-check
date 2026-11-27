@@ -1,6 +1,6 @@
 {
   "name": "cost-budget-check",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Check an AI feature's spend against its landing brief's cost budget: tokens per task and price per token. Every figure is computed in code with a source, cache reads are priced apart, drift is traced to the feature and model behind it, and a summary that overclaims is blocked.",
   "author": { "name": "Dacard" }
 }
