@@ -750,7 +750,7 @@ class House(unittest.TestCase):
     def test_versions_agree(self):
         plugin = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]
         skill = re.search(r'version: "([^"]+)"', (SKILL / "SKILL.md").read_text(encoding="utf-8")).group(1)
-        self.assertEqual({plugin, skill, check.VERSION}, {"0.3.0"})
+        self.assertEqual({plugin, skill, check.VERSION}, {"0.3.1"})
 
     def test_fixture_prices_are_marked_illustrative(self):
         data = json.loads((ACME / "pricing.json").read_text(encoding="utf-8"))

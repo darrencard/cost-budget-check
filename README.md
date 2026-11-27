@@ -8,20 +8,19 @@ A free Claude skill that checks each AI feature's spend against its landing brie
 
 **Part of the Landing Loop:** it reads the brief with the Product & Technology Leader Report's own parser and writes the `cost` key of `landing/<bet>.json`, which the report reads.
 
-## Install: paste one prompt into Claude Code
+## Install
+
+In Claude Code:
+
+```text
+/plugin marketplace add darrencard/landing-loop
+/plugin install cost-budget-check@landing-loop
+```
+
+Standalone, paste this into Claude Code:
 
 ```text
 Install the cost-budget-check skill from https://github.com/darrencard/cost-budget-check by copying skills/cost-budget-check into ~/.claude/skills/. Run its demo with python3 scripts/check.py --demo --out /tmp/cost-demo from the skill folder and show me the result. Then check my AI features against their landing briefs' cost budgets for last month against the month before: ask me only for what you cannot find (the briefs, the usage export or gateway logs, the task counts, and a pricing table with its source and date), and tell me what drives any drift.
-```
-
-Or as a plugin:
-
-```bash
-claude plugin marketplace add darrencard/cost-budget-check
-```
-
-```bash
-claude plugin install cost-budget-check@dacard-cost-budget-check
 ```
 
 ## What you see
@@ -88,3 +87,5 @@ Requires Python 3.9 or later, so the macOS system Python works. Standard library
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
+
+Claude and Claude Code are trademarks of Anthropic, PBC. These skills are independent and not affiliated with or endorsed by Anthropic.

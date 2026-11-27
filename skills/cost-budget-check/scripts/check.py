@@ -57,7 +57,7 @@ import pricing as pricing_mod  # noqa: E402
 import readers  # noqa: E402
 
 TOOL = "cost-budget-check"
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 WITHIN = "within budget"
 OVER = "over budget"
 RECONCILE_TOLERANCE = 0.02
