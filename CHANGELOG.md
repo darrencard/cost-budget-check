@@ -8,6 +8,7 @@
 - The Illustrative tag is blue (#74A5DA), not grey.
 - `cost_check.json` gains `decides` per feature, from the brief, so the next step names who decides.
 - Tests: the picture draws only printed figures, states the verdict in its aria-label, and the page paints no status colour; brass is only who decides; public copy uses the plain words and no model id; the vendored svgkit matches its pin.
+- Fix round 2: no text under 11px at any width. The vendored template and svgkit stay byte-identical; `floor_fonts` raises their smaller sizes to 11px as the page is built, and on phones the picture's panel gives the 340 wide variant its full width so its labels never shrink. The header prints the plain name, "Cost budget check"; the code name prints only for engineers. Tests: no font size under 11px in the page's CSS, the header's name, and no "record", "bet", "the bar", "PRD", "ARR" or "tokens" in public copy.
 
 ## 0.3.1, 2026-11-26
 

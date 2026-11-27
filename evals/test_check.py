@@ -658,7 +658,7 @@ class Sample(unittest.TestCase):
 
         page_html = (ROOT / "examples" / "acme" / "cost-budget-check.html").read_text(encoding="utf-8")
         template = (SKILL / "assets" / "leader-report-template.html").read_text(encoding="utf-8")
-        self.assertIn(template[template.index("<style>") + 7 : template.index("</style>")], page_html)
+        self.assertIn(page.floor_fonts(template[template.index("<style>") + 7 : template.index("</style>")]), page_html)
         self.assertEqual(hashlib.sha256(template.encode("utf-8")).hexdigest(), "e5740431ab5269606709d352d3d253325df740830e8316f06478873e71d430d0")
         for mark in ('class="sk-hdr"', 'class="sk-wide"', 'class="sk-tall"', 'class="sk-ill">Illustrative', 'class="next"', '<span class="bud over">over budget</span>'):
             self.assertIn(mark, page_html)
@@ -741,10 +741,29 @@ class Visual(unittest.TestCase):
         public = {"page": svgkit.page_text(self.page.split("For your engineers", 1)[0]).lower(), "twin": self.twin.split("## For your engineers", 1)[0].lower()}
         for name, text in public.items():
             with self.subTest(output=name):
-                for word in (r"\btokens?\b", r"price per token", r"\bcache\b", r"vendor-a", r"\bbets?\b", r"\bdrift\b", r"\.json", r"\.jsonl", r"(?<![-|])--[a-z]", r"\bfeature\b"):
+                for word in (r"\btokens?\b", r"price per token", r"\bcache\b", r"vendor-a", r"\bbets?\b", r"\brecords?\b", r"\bthe bar\b", r"\bprds?\b", r"\barr\b", r"\bdrift\b", r"\.json", r"\.jsonl", r"(?<![-|])--[a-z]", r"\bfeature\b"):
                     self.assertIsNone(re.search(word, text), word)
         self.assertIn("the landing brief, a one-page plan: what good looks like, by when, at what cost", self.page)
         self.assertIn("the large model is <code>vendor-a/xl</code>", self.page)
+
+    def test_no_text_is_smaller_than_11px(self):
+        css = " ".join(re.findall(r"<style>(.*?)</style>", self.page, re.DOTALL)) + " " + " ".join(re.findall(r'style="([^"]*)"', self.page))
+        sizes = re.findall(r"font-size\s*:\s*([\d.]+)px", css) + re.findall(r"font\s*:[^;{}]*?(?<![\w.-])([\d.]+)px", css)
+        sizes += re.findall(r'font-size="([\d.]+)"', self.page)
+        self.assertTrue(sizes)
+        self.assertEqual([s for s in sizes if float(s) < 11], [])
+        self.assertNotRegex(css, r"font-size\s*:\s*[\d.]+r?em")
+        before, after = ".a{font:400 10px/16px var(--mono)}.b{font-size:10.5px}.c{font-size:13px}", ".a{font:400 11px/16px var(--mono)}.b{font-size:11px}.c{font-size:13px}"
+        self.assertEqual(page.floor_fonts(before), after)
+        # The phone picture is 340 wide; on a 390px screen the panel gives it 356px, so its 11px labels never shrink.
+        self.assertIn("@media (max-width:440px){.panel{margin:0 -8px;padding:16px 8px 14px}}", self.page)
+
+    def test_the_header_prints_the_plain_name_and_the_code_name_is_for_engineers(self):
+        meta = re.search(r'<span class="sk-meta"><span>(.*?)</span>', self.page).group(1)
+        self.assertEqual(meta, "Cost budget check")
+        public, fold = self.page.split("For your engineers", 1)
+        self.assertNotIn("cost-budget-check", svgkit.page_text(public).lower())
+        self.assertIn("cost-budget-check 0.3.2", fold)
 
     def test_models_are_named_by_price(self):
         self.assertEqual(page.model_names(self.result), {"vendor-a/xl": "the large model", "vendor-a/large": "the standard model"})
