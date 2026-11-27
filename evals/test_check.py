@@ -701,7 +701,7 @@ class Visual(unittest.TestCase):
         at = [body.index(x) for x in order]
         self.assertEqual(at, sorted(at))
         self.assertEqual(body.count('<div class="next">'), 1)
-        self.assertIn('<span class="o">Head of Product, Quoting squad</span><span class="d">2026-11-29</span>', body)
+        self.assertIn('<span class="o">Head of Product, Quoting squad</span><span class="d"><span class="nw">2026-11-29</span></span>', body)
         self.assertIn("<details><summary>For your engineers</summary>", body)
 
     def test_the_visual_draws_only_figures_the_page_prints(self):
@@ -792,14 +792,14 @@ class Visual(unittest.TestCase):
         self.assertIn("the landing brief, a one-page plan: what good looks like, by when, at what cost", self.page)
         self.assertIn("the large model is <code>vendor-a/xl</code>", self.page)
 
-    def test_no_text_is_smaller_than_11px(self):
+    def test_no_text_is_smaller_than_12px(self):
         css = " ".join(re.findall(r"<style>(.*?)</style>", self.page, re.DOTALL)) + " " + " ".join(re.findall(r'style="([^"]*)"', self.page))
         sizes = re.findall(r"font-size\s*:\s*([\d.]+)px", css) + re.findall(r"font\s*:[^;{}]*?(?<![\w.-])([\d.]+)px", css)
         sizes += re.findall(r'font-size="([\d.]+)"', self.page)
         self.assertTrue(sizes)
-        self.assertEqual([s for s in sizes if float(s) < 11], [])
+        self.assertEqual([s for s in sizes if float(s) < 12], [])
         self.assertNotRegex(css, r"font-size\s*:\s*[\d.]+r?em")
-        before, after = ".a{font:400 10px/16px var(--mono)}.b{font-size:10.5px}.c{font-size:13px}", ".a{font:400 11px/16px var(--mono)}.b{font-size:11px}.c{font-size:13px}"
+        before, after = ".a{font:400 10px/16px var(--mono)}.b{font-size:11.5px}.c{font-size:13px}", ".a{font:400 12px/16px var(--mono)}.b{font-size:12px}.c{font-size:13px}"
         self.assertEqual(page.floor_fonts(before), after)
 
     def test_the_header_prints_the_plain_name_and_the_code_name_is_for_engineers(self):
@@ -807,7 +807,7 @@ class Visual(unittest.TestCase):
         self.assertEqual(meta, "Cost budget check")
         public, fold = self.page.split("For your engineers", 1)
         self.assertNotIn("cost-budget-check", svgkit.page_text(public).lower())
-        self.assertIn("cost-budget-check 0.3.4", fold)
+        self.assertIn("cost-budget-check 0.3.5", fold)
 
     def test_models_are_named_by_price(self):
         self.assertEqual(page.model_names(self.result), {"vendor-a/xl": "the large model", "vendor-a/large": "the standard model"})
@@ -937,7 +937,7 @@ class House(unittest.TestCase):
     def test_versions_agree(self):
         plugin = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]
         skill = re.search(r'version: "([^"]+)"', (SKILL / "SKILL.md").read_text(encoding="utf-8")).group(1)
-        self.assertEqual({plugin, skill, check.VERSION}, {"0.3.4"})
+        self.assertEqual({plugin, skill, check.VERSION}, {"0.3.5"})
 
     def test_fixture_prices_are_marked_illustrative(self):
         data = json.loads((ACME / "pricing.json").read_text(encoding="utf-8"))

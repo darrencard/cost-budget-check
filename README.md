@@ -2,6 +2,8 @@
 
 A free Claude skill that checks each AI feature's spend against the cost budget in its landing brief (a one-page plan: what good looks like, by when, at what cost), and names the feature and model behind any drift.
 
+A bet is a project you expect to move a number; its bar is the target its landing brief sets.
+
 **Why it matters:** a feature can pass its evals and still cost twice what was planned. The budget is two lines, tokens per task and price per token. This check holds spend to both, in code, with a source for every figure.
 
 **How it works:** it reads live usage (the Anthropic usage report, Vercel AI Gateway, agent run records) or a CSV, and prices it with a pricing table that carries its own source and date. It marks each line within budget or over budget, shows the change since last period, and renders one page for leaders.

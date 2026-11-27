@@ -4,7 +4,7 @@ description: Checks an AI feature's model spend against the cost budget in its l
 license: MIT. See LICENSE in the repository root.
 metadata:
   author: Dacard
-  version: "0.3.4"
+  version: "0.3.5"
 ---
 
 # Cost budget check
@@ -13,7 +13,7 @@ Checks each AI feature's spend against the cost budget in its landing brief, a o
 
 It is step 03 (Build) of the Landing Loop: it reads the brief with the Leader Report's own parser and writes only the `cost` key of the project file, `landing/<bet>.json`, which the Leader Report reads.
 
-In what you say to the user, call a piece of work a project, its plan the landing brief, its number to reach the target and `landing/<bet>.json` the project file. If the user says "bet", use their word. Keys, file names and flags stay as they are.
+In what you say to the user, call a piece of work a project, its plan the landing brief, its number to reach the target and `landing/<bet>.json` the project file. Use the user's word, project or bet; the record key stays `bet`. Keys, file names and flags stay as they are.
 
 The scripts make no network calls. You fetch live data with the session's connectors or with a key the user already has in their environment, save it as it stands, and pass the file. Never write a key into a file, a command you show, or the repository. Do not send the user's data anywhere else.
 
