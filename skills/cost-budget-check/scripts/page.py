@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
-"""Render cost_check.json as one self-contained HTML page in the Leader Report's style guide.
+"""Render cost_check.json as one self-contained HTML page, on the Leader Report's template and the Landing
+Loop's one visual family.
 
-The stylesheet, tokens and fonts are the Leader Report's own, read at render time from its template,
-vendored byte-identical as assets/leader-report-template.html (see scripts/vendor/VENDORED.md). The page
-follows that skill's references/design.md, the same brand family as dacard.ai/update:
+The stylesheet, tokens and fonts are the Leader Report's own, read at render time from its template, vendored
+byte-identical as assets/leader-report-template.html (see scripts/vendor/VENDORED.md). The pictures are drawn
+with svgkit (scripts/vendor/svgkit.py, vendored byte-identical from landing-loop and pinned in
+scripts/vendor/VENDORED.json). Only a few rules for this page's layout are added.
 
-  - scorecard rows: the line and its definition, then prior -> actual . BUDGET x in mono with a range
-    line beneath (grey dot prior, ink dot actual, a tick at the budget), then within budget or
-    over budget as plain words
-  - plan against actual: budget grey above actual ink, hatched when over budget
-  - labels in Geist Mono capitals, sentences in Geist, headings in Instrument Sans; hairlines, not boxes
-  - green, grey-white and red are a bet's landed, watch and stalled only, which did-it-land sets, so
-    this page uses none of them (the template's green selection and focus ring are set to ink here)
-  - each feature goes by its brief's title ("Quote drafting"); the slug stays in the evidence ledger
-  - an Illustrative tag when the prices are illustrative
+It reads top down for someone who has never seen a token: the shared header, the verdict as the heading, the
+budget word, then one picture per project: each budget line as a bar against its budget notch, the part over
+hatched, and the cost over budget split by model. Then one thing to do next, owned by the person the landing
+brief names, and the detail in two columns. Model ids, line keys, flags, files and the evidence ledger fold
+under "For your engineers". Public copy uses plain words: AI usage per task, AI price per unit, cheaper repeat
+reads, the large model.
 
-Every figure on the page is a display string from the ledger; the page computes nothing but the
+within budget and over budget are this check's own words and print in ink. Green, grey-white and red mean a
+project's landed, watch and stalled, which only did-it-land sets, so this page uses none of them. Brass is the
+person who decides the next step. Every figure is a display string from the ledger; the page computes only the
 positions of marks. Every piece of text is escaped. The page needs no network.
 
 Standard library only. Runs on Python 3.11 or later.
@@ -23,53 +24,96 @@ Standard library only. Runs on Python 3.11 or later.
 
 from __future__ import annotations
 
+import datetime
 import html
-import math
+import re
+import sys
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent / "vendor"))
+
+import svgkit as sk  # noqa: E402  (vendored, unchanged; see vendor/VENDORED.json)
+
 TEMPLATE = Path(__file__).resolve().parent.parent / "assets" / "leader-report-template.html"
-LABEL = {"tokens_per_task": "Tokens per task", "price_per_token": "Price per token", "cost_per_task": "Cost per task"}
+LINES = ("tokens_per_task", "price_per_token", "cost_per_task")
+LABEL = {"tokens_per_task": "AI usage per task", "price_per_token": "AI price per unit", "cost_per_task": "Cost per task"}
+LOWER = {"tokens_per_task": "AI usage per task", "price_per_token": "AI price per unit", "cost_per_task": "cost per task"}
 DEFINITION = {
-    "tokens_per_task": "Every token a task used (input, output, cache read, cache write), over tasks.",
-    "price_per_token": "Priced cost over those tokens, so cheaper cache reads pull it down.",
-    "cost_per_task": "Priced cost over tasks. Its budget is the brief's two lines multiplied.",
+    "tokens_per_task": "How much text the AI reads and writes for one task, counted in units the provider bills by.",
+    "price_per_token": "What those units cost on average. Cheaper repeat reads pull it down; a dearer model pushes it up.",
+    "cost_per_task": "What one task costs. Its budget is the other two budgets multiplied.",
 }
+BRIEF_MEANS = "the landing brief, a one-page plan: what good looks like, by when, at what cost"
+NEXT_STEP_DAYS = 14
 Json = dict[str, Any]
 
-# Layout for a report page on top of the Leader Report stylesheet: no rail, sections instead of slides.
+# Public copy for stored sentences (gaps, warnings): plain words, no flags or files. Longer phrases first.
+WORDS = (
+    (r" Pass --tasks or log a task id per request\.", " Add a count of tasks, or log a task id with each request."),
+    (r" Pass --[\w-]+[^.]*\.", ""),
+    (r"\btokens per task\b", "AI usage per task"),
+    (r"\bprice per token\b", "AI price per unit"),
+    (r"\bcache reads\b", "cheaper repeat reads"),
+    (r"\busage rows\b", "usage records"),
+    (r"\bthe feature tag\b", "the project label"),
+    (r"\bthe export's own cost\b", "the provider's own cost figure"),
+    (r"\bthe export\b", "the usage export"),
+    (r"\bthe pricing table\b", "the price list"),
+    (r"\bno model budget\b", "no AI budget"),
+    (r"\bfeature\b", "project"),
+    (r"\bbet\b", "project"),
+)
+
+# Layout for this page only. Everything else comes from the template's stylesheet and svgkit.CSS.
 PAGE_CSS = """
-main{margin-left:0}
+main.solo{margin-left:0}
+.solo .slide{min-height:0}
+.solo .slide.cover{min-height:0;padding-top:40px;padding-bottom:48px;justify-content:flex-start}
+.solo h1{font-size:clamp(34px,4.6vw,60px);line-height:1;letter-spacing:-.04em;max-width:22ch;margin-bottom:20px}
+.solo .lede{margin-bottom:24px}
+.bud{display:inline-block;font:400 10px/16px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--t1);border:1px solid var(--line3);border-radius:3px;padding:1px 6px;white-space:nowrap}
+.bud.over{background:var(--t1);color:var(--bg);border-color:var(--t1)}
+.verdict{margin:0 0 20px}
+.panel{border:1px solid var(--line);border-radius:12px;background:var(--s1);padding:24px 28px 20px}
+.panel h3{margin:0 0 14px}
+.panel .sk+h3{margin-top:32px}
+@media (min-width:1100px){.panel .sk{display:grid;grid-template-columns:720px minmax(0,1fr);gap:16px 40px;align-items:center}.panel .sk figcaption{margin-top:0;flex-direction:column;align-items:flex-start}}
+.next{margin-top:28px;display:grid;grid-template-columns:200px minmax(0,1fr);gap:8px 32px;align-items:baseline;border:1px solid var(--brass);border-radius:12px;padding:20px 24px;background:var(--brass-bg)}
+.next>b{font:400 10px/22px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--brass)}
+.next p{margin:0;font-size:16px;line-height:1.5;color:var(--t1)}
+.next p+p{margin-top:8px}
+.next .who{display:flex;flex-wrap:wrap;gap:4px 24px;margin-top:10px;font:400 11.5px/16px var(--mono);color:var(--brass)}
+.next .who span::before{font-size:10px;letter-spacing:.1em;color:var(--t3);margin-right:8px}
+.next .who .o::before{content:"DECIDES"}.next .who .d::before{content:"DUE"}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px 56px;align-items:start}
+.cols h3{margin-bottom:8px}
+.cols h3:not(:first-child){margin-top:28px}
+.figs{margin:0;display:grid}
+.figs>div{display:grid;grid-template-columns:150px minmax(0,1fr);gap:4px 16px;border-top:1px solid var(--line);padding:11px 0}
+.figs dt .bud{margin-top:4px}
+.figs dt{font:400 10px/22px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--t3)}
+.figs dd{margin:0;font-size:13.5px;line-height:1.55;color:var(--t2)}
+.figs dd b{color:var(--t1);font-weight:500}
+.figs dd small{display:block;font-size:12.5px;color:var(--t3);margin-top:2px}
+.plain{margin:0;padding:0;list-style:none}
+.plain li{border-top:1px solid var(--line);padding:11px 0;font-size:13px;line-height:1.5;color:var(--t2)}
+.sc-d{font-size:12.5px;line-height:1.5;color:var(--t3);margin:0 0 8px}
+.solo details{margin-top:4px}
+.solo details>*:not(summary){margin-top:12px}
+.solo details p,.solo details li{margin:0 0 10px;font-size:13px;color:var(--t2);max-width:80ch}
+.solo details ul{padding-left:18px}
+.tablewrap td,.tablewrap th{overflow-wrap:anywhere}
+.tablewrap .ex{font-size:12px;color:var(--t3)}
 ::selection{background:var(--t1);color:var(--bg)}
 :focus-visible{outline-color:var(--t1)}
-.slide{min-height:0;padding:56px 40px 48px}
-.slide.first{padding-top:64px}
-.slide h1{font-size:clamp(36px,4.6vw,60px);max-width:22ch}
-.brand{margin-bottom:32px}
-.lede{max-width:64ch;color:var(--t2);font-size:15px;margin:0}
-.sc{padding:0}
-.sc-g:first-of-type{border-top:0}
-.pv-wrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:8px 40px}
-.pv-wrap h3{margin:20px 0 4px}
-td .sh{width:64px}
-.notes{list-style:none;margin:0;padding:0}
-.notes li{border-top:1px solid var(--line);padding:14px 0;color:var(--t2);font-size:13px;overflow-wrap:anywhere}
-.notes li:first-child{border-top:0}
-.scroll{overflow-x:auto}
-.ledger td{font-size:12px}
-.models code{white-space:nowrap}
-.bud{font:400 10px/16px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--t1);white-space:nowrap}
-@media (max-width:980px){.slide{padding:36px 16px 32px}.slide.first{padding-top:40px}}
-@media (max-width:640px){.models td:first-child,.models th:first-child{display:none}}
-@media (max-width:640px){.sc-h,.sc-r{grid-template-columns:minmax(0,1fr) auto;gap:10px 16px}.sc-h span:nth-child(2){display:none}.sc-v{grid-column:1/-1;grid-row:2}.sc-s{grid-column:2;grid-row:1}}
+.foot{max-width:1120px;margin:0 auto;padding:28px 40px 64px;color:var(--t3);font-size:12px}
+@media (max-width:980px){.foot{padding:24px 16px 48px}.solo .slide.cover{padding-top:24px}.cols,.next{grid-template-columns:1fr}.panel{padding:18px 16px 16px}
+.stack table,.stack tbody,.stack tr,.stack td{display:block}.stack tr:first-child{display:none}.stack tr{padding:10px 16px;border-bottom:1px solid var(--line)}
+.stack td{border:0;padding:3px 0;display:grid;grid-template-columns:104px 1fr;gap:12px}.stack td.num{text-align:left;white-space:normal}
+.stack td::before{content:attr(data-l);font:400 10px/20px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--t3)}}
+@media (max-width:560px){.figs>div{grid-template-columns:1fr;gap:0}}
 """
-
-BRAND = (
-    '<div class="brand"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">'
-    '<rect x="2" y="13" width="3" height="7" fill="var(--agent)"/><rect x="7" y="10" width="3" height="10" fill="var(--agent)"/>'
-    '<rect x="12" y="2" width="1.5" height="20" fill="var(--brass)"/><rect x="16" y="4" width="4" height="16" fill="var(--t1)"/></svg>'
-    '<span translate="no">DACARD</span></div>'
-)
 
 
 def stylesheet() -> str:
@@ -83,74 +127,14 @@ def e(text: Any) -> str:
     return html.escape(str(text), quote=True)
 
 
-def pct(v: float) -> str:
-    """A mark position, rounded half up to one decimal so the page is the same on every run."""
-    v = math.floor(max(0.0, min(v, 1.0)) * 1000 + 0.5) / 10
-    return str(int(v)) if v == int(v) else str(v)
+def plain(text: str) -> str:
+    for pattern, to in WORDS:
+        text = re.sub(pattern, to, text)
+    return text
 
 
-def status(word: str | None) -> str:
-    """within budget or over budget, as plain words with no status colour or mark."""
-    if word in ("within budget", "over budget"):
-        return f'<span class="bud">{e(word)}</span>'
-    return '<span class="li-t">not checked</span>'
-
-
-def range_line(c: Json) -> str:
-    """Prior, actual and the budget on one line, as the scorecard draws them. Lower is better, so the band sits under the budget."""
-    prior = c.get("prior")
-    top = max(c["budget"], c["actual"], prior or 0) * 1.18 or 1
-    b, a = c["budget"] / top, c["actual"] / top
-    p = prior / top if prior is not None else a
-    lo, hi = sorted((p, a))
-    marks = [
-        '<i class="tr"></i>',
-        f'<i class="goal" style="left:{pct(b)}%"></i>',
-        f'<i class="mv" style="left:{pct(lo)}%;width:{pct(hi - lo)}%"></i>' if prior is not None else "",
-        f'<i class="pr" style="left:{pct(p)}%"></i>' if prior is not None else "",
-        f'<i class="ac" style="left:{pct(a)}%"></i>',
-    ]
-    return f'<span class="bl" aria-hidden="true">{"".join(marks)}</span>'
-
-
-def figure_line(c: Json) -> str:
-    prior = f"{e(c['prior_display'])} <i>&rarr;</i> " if c.get("prior_display") else ""
-    since = f" &middot; {e(c['change_display'])} since prior" if c.get("change_display") else ""
-    return f"{prior}<b>{e(c['actual_display'])}</b> &middot; <em>Budget</em> {e(c['budget_display'])} &middot; {e(c['over_display'])}{since}"
-
-
-def scorecard(result: Json) -> str:
-    rows = ['<div class="sc-h"><span>Line</span><span>Prior &rarr; actual &middot; budget</span><span>Status</span></div>']
-    for f in result["features"]:
-        rows.append(f'<div class="sc-g">{e(name(f))}</div>')
-        if not f["checks"]:
-            rows.append(f'<div class="sc-r"><div class="sc-n"><span>No line checked</span><span class="sc-d">{e("; ".join(f["gaps"]))}</span></div><div class="sc-v"></div><div class="sc-s">{status(None)}</div></div>')
-        for key in ("tokens_per_task", "price_per_token", "cost_per_task"):
-            c = f["checks"].get(key)
-            if not c:
-                continue
-            rows.append(
-                f'<div class="sc-r"><div class="sc-n"><span>{LABEL[key]}</span><span class="sc-d">{DEFINITION[key]}</span></div>'
-                f'<div class="sc-v">{range_line(c)}<span class="sc-l">{figure_line(c)}</span></div>'
-                f'<div class="sc-s">{status(c["status"])}</div></div>'
-            )
-    return f'<div class="sc">{"".join(rows)}</div>'
-
-
-def plan_vs_actual(f: Json) -> str:
-    rows = []
-    for key in ("tokens_per_task", "price_per_token", "cost_per_task"):
-        c = f["checks"].get(key)
-        if not c:
-            continue
-        top = max(c["budget"], c["actual"]) or 1
-        over = " over" if c["actual"] > c["budget"] else ""
-        rows.append(
-            f'<div class="pvr"><span>{LABEL[key]}</span><span class="v">{e(c["budget_display"])} / {e(c["actual_display"])}</span>'
-            f'<div class="track"><div class="b" style="width:{pct(c["budget"] / top)}%"></div>'
-            f'<div class="b a{over}" style="width:{pct(c["actual"] / top)}%"></div></div></div>'
-        )
-    return f'<div><h3>{e(name(f))}</h3><div class="pv">{"".join(rows)}</div></div>' if rows else ""
+def cap(text: str) -> str:
+    return text[:1].upper() + text[1:]
 
 
 def name(f: Json) -> str:
@@ -162,133 +146,333 @@ def name_of(result: Json, feature: str) -> str:
     return next((name(f) for f in result["features"] if f["feature"] == feature), feature)
 
 
+def model_names(result: Json) -> dict[str, str]:
+    """Plain names for the models, by price per unit across the whole check: the dearest is the large model.
+
+    Model ids are vendor words; they print only in the engineers' fold."""
+    price: dict[str, float] = {}
+    for f in result["features"]:
+        for m in f.get("models", []):
+            if m["tokens"]:
+                price[m["model"]] = max(price.get(m["model"], 0.0), m["cost"] / m["tokens"])
+    ranked = sorted(price, key=lambda k: (-price[k], k))
+    if len(ranked) == 1:
+        return {ranked[0]: "the model"}
+    names = {ranked[0]: "the large model", ranked[-1]: "the standard model"}
+    middle = ranked[1:-1]
+    for i, model in enumerate(middle, start=1):
+        names[model] = "the mid-size model" if len(middle) == 1 else f"mid-size model {i}"
+    return names
+
+
 def headline(result: Json) -> str:
+    models = model_names(result)
     if result["drivers"]:
         top = result["drivers"][0]
         f = next(x for x in result["features"] if x["feature"] == top["feature"])
         if f["drift"] > 0:
-            return f"{name(f)} is {f['drift_display']} over its cost budget, and {top['model']} drives the largest part."
-        return f"{name(f)} is within its cost budget overall, but {top['model']} runs over it."
+            return f"{name(f)} is {f['drift_display']} over its cost budget, and {models.get(top['model'], top['model'])} drives the largest part."
+        return f"{name(f)} is within its cost budget overall, but {models.get(top['model'], top['model'])} runs over it."
     over = [name(f) for f in result["features"] if f.get("status") == "over budget"]
     if over:
         return f"{', '.join(over)}: a budget line is over budget."
     if any(f.get("status") for f in result["features"]):
-        return "Every feature checked is within its cost budget."
-    return "No feature could be checked against its cost budget."
+        return "Every project checked is within its cost budget."
+    return "No project could be checked against its cost budget."
+
+
+def window_text(result: Json) -> str:
+    w = result["window"] or f"{result['window_used']['from']}..{result['window_used']['to']}"
+    a, _, b = w.partition("..")
+    return f"{a} to {b}" if b else w
 
 
 def lede(result: Json) -> str:
-    over = []
+    one = len(result["features"]) == 1
+    said = ""
+    if one:
+        f = result["features"][0]
+        c = f["checks"].get("cost_per_task")
+        if c:
+            said = f" From {window_text(result)}, each task cost {c['actual_display']} against a budget of {c['budget_display']} ({c['over_display']})."
+    return (
+        f"Each project's AI spend against the cost budget in {BRIEF_MEANS}. The budget is two lines, AI usage per task and AI price per unit; "
+        f"multiplied, they give cost per task.{said}"
+    )
+
+
+def part(top: Json, f: Json) -> str:
+    """The driver's share of the project's cost over budget, said so the parts add up."""
+    if 0 < top["drift"] <= f["drift"]:
+        return f"{top['drift_display']} of the {f['drift_display']} over budget"
+    return f"{top['drift_display']} over budget on its own, {f['drift_display']} for the project in all"
+
+
+def next_step(result: Json) -> tuple[str, str, str]:
+    """One step, who decides it and when: the largest part over budget first."""
+    as_of = datetime.date.fromisoformat(result["as_of"])
+    due = str(as_of + datetime.timedelta(days=NEXT_STEP_DAYS))
+    models = model_names(result)
+    if result["drivers"]:
+        top = result["drivers"][0]
+        f = next(x for x in result["features"] if x["feature"] == top["feature"])
+        lines = [LOWER[k] for k in LINES if f["checks"].get(k, {}).get("status") == "over budget" and k != "cost_per_task"]
+        rise = f" and the rise in {' and '.join(lines)}" if lines else ""
+        text = (
+            f"Review the {name(f)} work sent to {models.get(top['model'], top['model'])} ({part(top, f)}){rise}. "
+            "Then bring cost per task back under budget, or change the budget in the landing brief, and run this check again."
+        )
+        return text, f.get("decides") or "", due
+    over = [f for f in result["features"] if f.get("status") == "over budget"]
+    if over:
+        f = over[0]
+        return f"Look at why {name(f)} runs over a budget line, then run this check again.", f.get("decides") or "", due
+    checked = [f for f in result["features"] if f.get("status")]
+    if checked:
+        return "Nothing to change. Run this check again on the next period of usage.", checked[0].get("decides") or "", due
+    return "Fix what stopped the check, listed below, then run it again.", "", due
+
+
+# The signature picture
+
+
+def line_sentence(c: Json, key: str) -> str:
+    return f"{LOWER[key]} {c['actual_display']} against {c['budget_display']} ({c['over_display']}, {c['status']})"
+
+
+def answer(result: Json, f: Json) -> str:
+    """The aria-label: the verdict for this project, in one sentence."""
+    lines = [line_sentence(f["checks"][k], k) for k in LINES if k in f["checks"]]
+    text = f"{name(f)} is {f.get('status') or 'not checked'}: " + "; ".join(lines)
+    models = model_names(result)
+    over = [m for m in f.get("models", []) if m["drift"] > 0]
+    if over and f.get("drift", 0) > 0:
+        top = max(over, key=lambda m: m["drift"])
+        text += f". {cap(models.get(top['model'], top['model']))} drives the largest part: {part(top, f)}"
+    return text + "."
+
+
+def bars(result: Json, f: Json, index: int, variant: str) -> str:
+    """Each budget line as a bar against its budget notch, the part over hatched; a hollow dot marks the two
+    period before. Under them, the cost over budget split by model, the largest part in ink."""
+    wide = variant == "wide"
+    width = float(sk.WIDE if wide else sk.TALL)
+    track = 470.0 if wide else width
+    hid = f"sk-cb-{index}-{variant}"
+    parts = [sk.defs(sk.hatch_pattern(hid))]
+    y = 14.0
+    for key in LINES:
+        c = f["checks"].get(key)
+        if not c:
+            continue
+        prior = c.get("prior")
+        top = max(c["budget"], c["actual"], prior or 0) * 1.12 or 1
+        x = sk.scale((0, top), (0, track))
+        parts.append(sk.label(0, y, LABEL[key], tone=sk.INK))
+        bar_y = y + 12
+        if wide:
+            parts.append(sk.label(x(c["budget"]), y, "budget", anchor="middle"))
+            parts.append(sk.value(492, bar_y + 11, c["actual_display"], size=16))
+            parts.append(sk.label(492, bar_y + 29, f"budget {c['budget_display']} · {c['over_display']}"))
+        else:
+            parts.append(sk.value(width, y + 1, c["actual_display"], anchor="end", size=15))
+        parts.append(sk.rule(0, bar_y + 6, track, bar_y + 6, tone=sk.LINE))
+        parts.append(sk.hbar(0, bar_y, actual=x(c["actual"]), budget=x(c["budget"]), height=12, tone=sk.INK2, hatch_id=hid))
+        if prior is not None:
+            parts.append(sk.hollow(x(prior), bar_y + 6, r=3.5, tone=sk.INK))
+        if wide:
+            y = bar_y + 56
+        else:
+            parts.append(sk.label(0, bar_y + 32, f"budget {c['budget_display']} · {c['over_display']}"))
+            y = bar_y + 62
+    over = sorted((m for m in f.get("models", []) if m["drift"] > 0), key=lambda m: -m["drift"])
+    if over:
+        models = model_names(result)
+        y += 6
+        parts.append(sk.rule(0, y - 14, width, y - 14, tone=sk.LINE))
+        parts.append(sk.label(0, y + 6, f"Over budget by model · {f['drift_display']}", tone=sk.INK))
+        total = sum(m["drift"] for m in over)
+        x = sk.scale((0, total), (0, track))
+        at, sy = 0.0, y + 18
+        for i, m in enumerate(over):
+            w = x(m["drift"])
+            fill = sk.INK if i == 0 else sk.MUTED
+            parts.append(sk.tile(at, sy, max(1.0, w - (2 if i < len(over) - 1 else 0)), 14, filled=True, tone=fill))
+            at += w
+        ky = sy + 38
+        for i, m in enumerate(over):
+            tone = sk.INK if i == 0 else sk.MUTED
+            parts.append(sk.tile(0, ky - 9, 10, 10, filled=True, tone=tone))
+            parts.append(sk.value(18, ky, cap(models.get(m["model"], m["model"])), size=14, tone=sk.INK if i == 0 else sk.INK2))
+            right = 492 if wide else width
+            parts.append(sk.value(right, ky, m["drift_display"], anchor="start" if wide else "end", size=14, tone=sk.INK if i == 0 else sk.INK2))
+            if wide:
+                parts.append(sk.label(570, ky, f"{m['share_display']} of usage"))
+            ky += 24
+        y = ky - 10
+    return sk.frame("".join(parts), label=answer(result, f), height=y + 4, width=width, variant=variant)
+
+
+# The detail
+
+
+class Table:
+    """A table whose cells carry their column name, so a phone shows each row as labelled lines."""
+
+    def __init__(self, heads: tuple[str, ...]) -> None:
+        self.heads = heads
+        self.rows: list[str] = []
+
+    def row(self, *cells: tuple[str, str]) -> None:
+        tds = []
+        for head, (cls, body) in zip(self.heads, cells, strict=True):
+            attr = f' class="{cls}"' if cls else ""
+            tds.append(f'<td{attr} data-l="{e(head)}">{body}</td>')
+        self.rows.append("<tr>" + "".join(tds) + "</tr>")
+
+    def html(self) -> str:
+        head = "<tr>" + "".join(f"<th>{e(h)}</th>" for h in self.heads) + "</tr>"
+        return f'<div class="tablewrap stack"><table>{head}{"".join(self.rows)}</table></div>'
+
+
+def status(word: str | None) -> str:
+    """within budget or over budget, as plain words in ink, with no status colour."""
+    if word in ("within budget", "over budget"):
+        return f'<span class="bud{" over" if word == "over budget" else ""}">{e(word)}</span>'
+    return '<span class="bud">not checked</span>'
+
+
+def lines_list(result: Json) -> str:
+    out = []
+    many = len(result["features"]) > 1
     for f in result["features"]:
-        for key in ("tokens_per_task", "price_per_token", "cost_per_task"):
+        rows = []
+        for key in LINES:
             c = f["checks"].get(key)
-            if c and c["status"] != "within budget":
-                over.append(f"{LABEL[key].lower()} is {c['actual_display']} against {c['budget_display']} ({c['status']})")
-    said = f" For {name(result['features'][0])}, " + "; ".join(over) + "." if over and len(result["features"]) == 1 else ""
-    return f"Each feature's model spend against the cost budget in its landing brief: two lines, tokens per task and price per token, and their product, cost per task.{said} Each line is within budget or over budget."
+            if not c:
+                continue
+            since = f" The period before: {e(c['prior_display'])} ({e(c['change_display'])} since)." if c.get("prior_display") else ""
+            rows.append(
+                f"<div><dt>{LABEL[key]}<br>{status(c['status'])}</dt><dd><b>{e(c['actual_display'])}</b> against a budget of {e(c['budget_display'])}, {e(c['over_display'])}."
+                f"<small>{DEFINITION[key]}{since}</small></dd></div>"
+            )
+        if not rows:
+            rows.append(f"<div><dt>Not checked</dt><dd>{e(plain('; '.join(f['gaps'])))}</dd></div>")
+        head = f"<h3>{e(name(f))}</h3>" if many else ""
+        out.append(f'{head}<dl class="figs">{"".join(rows)}</dl>')
+    return "".join(out)
 
 
-def section(label: str, title: str, body: str) -> str:
-    return f'<section class="slide"><div class="meta"><span>{e(label)}</span></div><h2>{e(title)}</h2>{body}</section>'
+def money_list(result: Json) -> str:
+    models = model_names(result)
+    rows = []
+    for f in result["features"]:
+        for m in sorted(f.get("models", []), key=lambda m: -m["drift"]):
+            who = cap(models.get(m["model"], m["model"])) + (f" on {name(f)}" if len(result["features"]) > 1 else "")
+            rows.append(
+                f"<div><dt>{e(who)}</dt><dd><b>{e(m['drift_display'])}</b> over budget. {e(m['share_display'])} of the AI usage, "
+                f"{e(m['cost_display'])} spent, {e(m['price_per_token_display'])} a unit.</dd></div>"
+            )
+        if f.get("cost_display"):
+            tasks = f" over {e(f['tasks_display'])} tasks" if f.get("tasks_display") else ""
+            rows.append(f"<div><dt>{e(name(f))} in all</dt><dd><b>{e(f['cost_display'])}</b> spent{tasks}; {e(f.get('drift_display', ''))} over budget.</dd></div>")
+        if f.get("cost_per_success_display"):
+            rows.append(
+                f"<div><dt>Per task that worked</dt><dd>{e(f['success_rate_display'])} of tasks succeeded, so each one that worked cost "
+                f"<b>{e(f['cost_per_success_display'])}</b>. No budget line covers it; it is shown, not marked.</dd></div>"
+            )
+    for u in result["unbriefed"]:
+        rows.append(f"<div><dt>No plan</dt><dd>{e(u['feature'])}: <b>{e(u['cost_display'])}</b> spent with no landing brief, so no budget to check.</dd></div>")
+    if "reconcile" in result:
+        r = result["reconcile"]
+        rows.append(
+            f"<div><dt>The bill</dt><dd><b>{e(r['billed_display'])}</b> billed; {e(r['priced_display'])} priced from usage; "
+            f"{e(r['unattributed_display'])} not in the usage given.</dd></div>"
+        )
+    if not rows:
+        return "<p class='sc-d'>No spend to split.</p>"
+    lede = "Cost over budget is split by model as each model's cost minus its share of the budget by usage, so the parts add up. It shows where the money went, not why."
+    return f"<p class='sc-d'>{lede}</p><dl class='figs'>{''.join(rows)}</dl>"
+
+
+def worth_knowing(result: Json) -> list[str]:
+    items = [f"{name(f)}: {plain(g)}" for f in result["features"] for g in f["gaps"]]
+    items += [cap(plain(w)) for w in result["warnings"]]
+    p = result["pricing"]
+    ill = " They are illustrative, not any provider's list price." if p["illustrative"] else ""
+    items.append(f"Prices were retrieved {p['retrieved']}, in {p['currency']}.{ill}")
+    return items
+
+
+def engineers(result: Json) -> str:
+    models = model_names(result)
+    eng = []
+    if models:
+        eng.append("<p>Models: " + "; ".join(f"{e(n)} is <code>{e(m)}</code>" for m, n in models.items()) + ".</p>")
+    eng.append(
+        "<p>Line keys: <code>tokens_per_task</code> (AI usage per task, in tokens: input, output, cache read and cache write), "
+        "<code>price_per_token</code> (AI price per unit: priced cost over tokens, so cache reads pull it down) and <code>cost_per_task</code>.</p>"
+    )
+    t = Table(("Feature", "Model", "Share of tokens", "Price per token", "Priced cost", "Over budget"))
+    for f in result["features"]:
+        for m in f.get("models", []):
+            t.row(("", e(f["feature"])), ("", f"<code>{e(m['model'])}</code>"), ("num", e(m["share_display"])), ("num", e(m["price_per_token_display"])), ("num", e(m["cost_display"])), ("num", e(m["drift_display"])))
+    if t.rows:
+        eng.append(t.html())
+    notes = [f"{f['feature']}: tasks from {f['tasks_source']}." for f in result["features"] if f.get("tasks_source")]
+    notes += [f"Read: {n}" for n in result["notes"]]
+    notes += [f"{f['feature']}: {g}" for f in result["features"] for g in f["gaps"]]
+    p = result["pricing"]
+    notes.append(f"Prices: {p['file']}, {p['source'].rstrip('.')}, retrieved {p['retrieved']}, {p['currency']}.")
+    eng.append("<ul>" + "".join(f"<li>{e(n)}</li>" for n in notes) + "</ul>")
+    gate = f" --tolerance {result['tolerance']:g} lets a line run that share over budget before the gate fails; the line still reads over budget." if result["tolerance"] else ""
+    eng.append(
+        "<p>With --landing and --bet, the run adds its page to the project file: the <code>cost</code> key of <code>landing/&lt;bet&gt;.json</code>, and no other key. "
+        f"--fail-on over-budget turns the check into a CI gate (exit code 2).{e(gate)}</p>"
+    )
+    lt = Table(("ID", "Figure", "Formula", "Sources"))
+    for r in result["ledger"]:
+        lt.row(("", f"<code>{e(r['id'])}</code>"), ("num", e(r["display"])), ("", e(r["formula"])), ("ex", e("; ".join(r["sources"]))))
+    eng.append(f"<p>Every figure, its formula and sources ({len(result['ledger'])} in all):</p>" + lt.html())
+    eng.append(f"<p>cost-budget-check {e(result['version'])}. Every figure is computed in code by scripts/check.py; this page computes none.</p>")
+    return f"<details><summary>For your engineers</summary>{''.join(eng)}</details>"
 
 
 def render(result: Json) -> str:
     p = result["pricing"]
-    window = result["window"] or f"{result['window_used']['from']}..{result['window_used']['to']}"
-    ill = '<span class="ill">Illustrative</span>' if p["illustrative"] else ""
-    prior = f"<span>Prior {e(result['prior_window'])}</span>" if result.get("prior_window") else ""
-    facts = []
-    for f in result["features"]:
-        c = f["checks"].get("cost_per_task")
-        if c:
-            facts.append(f"<span><b>{e(c['actual_display'])}</b>{e(name(f))} cost per task</span>")
-        if f.get("cost_display"):
-            facts.append(f"<span><b>{e(f['cost_display'])}</b>{e(name(f))} priced</span>")
-    for f in result["features"]:
-        if f.get("drift", 0) > 0:
-            facts.append(f"<span><b>{e(f['drift_display'])}</b>{e(name(f))} over budget</span>")
-    if "reconcile" in result:
-        facts.append(f"<span><b>{e(result['reconcile']['unattributed_display'])}</b>billed, not in the usage</span>")
+    header = sk.page_header("cost-budget-check", date=result["as_of"], version=f"v{result['version']}", illustrative=p["illustrative"])
+    pics = []
+    checked = [f for f in result["features"] if f["checks"]]
+    for i, f in enumerate(checked):
+        cap_text = (
+            "Each bar is a line's actual figure against its budget notch; the hatched part is over budget. "
+            + ("The open dot is the period before. " if any("prior" in c for c in f["checks"].values()) else "")
+            + ("Under them, the cost over budget split by model, the largest part in ink." if any(m["drift"] > 0 for m in f.get("models", [])) else "")
+        )
+        head = f"<h3>{e(name(f))}</h3>" if len(checked) > 1 else ""
+        pics.append(head + sk.figure(bars(result, f, i, "wide"), bars(result, f, i, "tall"), caption=cap_text.strip(), illustrative=p["illustrative"]))
+    overall = "over budget" if any(f.get("status") == "over budget" for f in result["features"]) else ("within budget" if checked else None)
+    text, decides, due = next_step(result)
+    who = f'<span class="o">{e(decides)}</span>' if decides else ""
+    step = f'<div class="next"><b>What to do next</b><div><p>{e(text)}</p><span class="who">{who}<span class="d">{e(due)}</span></span></div></div>'
+    panel = f'<div class="panel">{"".join(pics)}</div>' if pics else ""
     cover = (
-        f'<section class="slide first">{BRAND}<div class="meta"><span>Cost budget check</span><span>{e(window)}</span>'
-        f"{prior}<span>As of {e(result['as_of'])}</span>{ill}</div>"
-        f"<h1>{e(headline(result))}</h1><p class='lede'>{e(lede(result))}</p>" + (f'<div class="facts">{"".join(facts)}</div>' if facts else "") + "</section>"
+        f'<section class="slide cover">{header}<h1>{e(headline(result))}</h1><p class="lede">{e(lede(result))}</p>'
+        f'<p class="verdict">{status(overall)}</p>{panel}{step}</section>'
     )
-    lines = section("Budget lines", "Each line against the brief's budget", scorecard(result))
-
-    pv = "".join(plan_vs_actual(f) for f in result["features"])
-    budget_vs = (
-        section(
-            "Budget against actual",
-            "Budget grey, actual ink, hatched where over",
-            '<div class="key"><span><i></i>Budget</span><span><i class="a"></i>Actual</span><span><i class="o"></i>Over budget</span></div>' + f'<div class="pv-wrap">{pv}</div>',
-        )
-        if pv
-        else ""
+    notes = "".join(f"<li>{e(n)}</li>" for n in worth_knowing(result))
+    before = f" The period before is {e(window_text({'window': result['prior_window'], 'window_used': {}}))}." if result.get("prior_window") else ""
+    detail = (
+        f'<section class="slide"><div class="meta"><span>{e(window_text(result))}</span></div><div class="cols">'
+        f"<div><h3>Each line against the budget</h3><p class='sc-d'>Usage from {e(window_text(result))}.{before}</p>{lines_list(result)}</div>"
+        f"<div><h3>Where the money went</h3>{money_list(result)}<h3>Worth knowing</h3><ul class='plain'>{notes}</ul></div>"
+        "</div></section>"
     )
-
-    model_rows = []
-    for f in result["features"]:
-        for m in f.get("models", []):
-            model_rows.append(
-                f'<tr><td>{e(name(f))}</td><td><code>{e(m["model"])}</code></td><td><span class="sh"><i style="width:{pct(m["share"])}%"></i></span>{e(m["share_display"])}</td>'
-                f'<td class="num">{e(m["price_per_token_display"])}</td><td class="num">{e(m["cost_display"])}</td><td class="num">{e(m["drift_display"])}</td></tr>'
-            )
-    driver = (
-        f"<p class='lede'>The driver is {e(name_of(result, result['drivers'][0]['feature']))} on {e(result['drivers'][0]['model'])}: {e(result['drivers'][0]['drift_display'])} of the cost over budget. "
-        "Cost over budget is split by model as each model's cost minus its share of the budget by tokens, so the parts add up. It shows where the money went, not why.</p>"
-        if result["drivers"]
-        else "<p class='lede'>No feature and model is over budget.</p>"
-    )
-    models = (
-        section(
-            "Where the money went",
-            "By feature and model",
-            driver
-            + '<div class="scroll" style="margin-top:24px"><table class="models"><thead><tr><th>Feature</th><th>Model</th><th>Share of tokens</th><th class="num">Price per token</th>'
-            + f'<th class="num">Priced cost</th><th class="num">Over budget</th></tr></thead><tbody>{"".join(model_rows)}</tbody></table></div>',
-        )
-        if model_rows
-        else ""
-    )
-
-    notes = []
-    if "reconcile" in result:
-        r = result["reconcile"]
-        notes.append(("Bill", f"{r['billed_display']} billed, {r['priced_display']} priced from usage, {r['unattributed_display']} not in the usage given."))
-    notes += [("Gap", f"{f['feature']}: {g}") for f in result["features"] for g in f["gaps"]]
-    notes += [("Tasks", f"{f['feature']}: {f['tasks_source']}.") for f in result["features"] if f.get("tasks_source")]
-    notes += [("No brief", f"{u['feature']}: {u['cost_display']} priced, with no landing brief, so no budget to check.") for u in result["unbriefed"]]
-    notes += [("Warning", w) for w in result["warnings"]]
-    notes += [("Read", n) for n in result["notes"]]
-    notes.append(("Prices", f"{p['file']}: {p['source'].rstrip('.')}, retrieved {p['retrieved']}, {p['currency']}."))
-    data_notes = section("Data notes", "What was read, and what is missing", '<ul class="notes">' + "".join(f'<li><span class="li-t">{e(t)}</span>{e(x)}</li>' for t, x in notes) + "</ul>")
-
-    ledger_rows = "".join(f'<tr><td><code>{e(r["id"])}</code></td><td class="num">{e(r["display"])}</td><td>{e(r["formula"])}</td><td>{e("; ".join(r["sources"]))}</td></tr>' for r in result["ledger"])
-    ledger = section(
-        "Evidence ledger",
-        "Every figure, its formula and sources",
-        f'<details><summary>Show all {len(result["ledger"])} figures</summary><div class="scroll ledger"><table><thead><tr><th>ID</th><th class="num">Figure</th><th>Formula</th><th>Sources</th></tr></thead>'
-        f"<tbody>{ledger_rows}</tbody></table></div></details>"
-        f'<p class="asof" style="margin-top:24px">cost-budget-check {e(result["version"])}. Every figure is computed in code by scripts/check.py; this page computes none.</p>',
-    )
+    more = f'<section class="slide"><div class="meta"><span>Detail</span></div>{engineers(result)}</section>'
+    title = f"Cost budget check: {window_text(result)}"
     return (
-        "\n".join(
-            [
-                "<!DOCTYPE html>",
-                '<html lang="en">',
-                '<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">',
-                f"<title>Cost budget check: {e(window)}</title>",
-                f"<style>{stylesheet()}{PAGE_CSS}</style></head>",
-                "<body><main>",
-                cover,
-                lines,
-                budget_vs,
-                models,
-                data_notes,
-                ledger,
-                "</main></body></html>",
-            ]
-        )
-        + "\n"
+        '<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+        f'<title>{e(title)}</title><style>{stylesheet()}{sk.CSS}{PAGE_CSS}</style></head><body><main class="solo">{cover}{detail}{more}'
+        '<p class="foot">A cost check says whether AI spend stays inside the budget the plan set. It is not the project\'s result: only did-it-land reads that. '
+        "It shows where the money went, not why.</p></main></body></html>\n"
     )

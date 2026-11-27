@@ -4,7 +4,7 @@ description: Checks an AI feature's model spend against the cost budget in its l
 license: MIT. See LICENSE in the repository root.
 metadata:
   author: Dacard
-  version: "0.3.1"
+  version: "0.3.2"
 ---
 
 # Cost budget check
@@ -61,7 +61,7 @@ python3 scripts/check.py \
   --landing landing --bet visit-notes=visit-notes
 ```
 
-It writes `run/cost_check.html` (one self-contained page in the Leader Report's style, for leaders), `run/cost_check.md` (its plain-text twin, also printed) and `run/cost_check.json` (every figure with its formula and sources). With `--landing` it writes the `cost` key of `landing/<bet>.json` and keeps every other key as it found it; a record holding a different brief is refused. Show the user the HTML page. Exit 1 means an input was refused; the message says which file and why. Fix the input and run it again. `--fail-on over-budget` exits 2 when any line is over budget, for a scheduled job or CI; `--tolerance 0.10` lets a line run up to 10% over before the gate trips (default 0). The line still reads over budget.
+It writes `run/cost_check.html` (one self-contained page in the Leader Report's style, for leaders), `run/cost_check.md` (its plain-text twin, also printed) and `run/cost_check.json` (every figure with its formula and sources). With `--landing` it writes the `cost` key of `landing/<bet>.json` and keeps every other key as it found it; a record holding a different brief is refused. Show the user the HTML page. The page and the twin use plain words for leaders (AI usage per task, AI price per unit, the large model); model ids, line keys and flags sit under "For your engineers". Exit 1 means an input was refused; the message says which file and why. Fix the input and run it again. `--fail-on over-budget` exits 2 when any line is over budget, for a scheduled job or CI; `--tolerance 0.10` lets a line run up to 10% over before the gate trips (default 0). The line still reads over budget.
 
 ## What the check computes
 
@@ -74,7 +74,7 @@ It writes `run/cost_check.html` (one self-contained page in the Leader Report's 
 - **within budget** at or under budget. **over budget** over it. These are the only two words for a budget line. landed, watch and stalled are a bet's status, set only by did-it-land; never use them for a budget line.
 - **Cost over budget** is priced cost minus tasks x budgeted cost per task. It is split by model as each model's cost minus its token share of the budget, so the parts add up to the whole. The **driver** is the feature and model with the largest part.
 - **Cache reads** are priced at their own rate. OpenAI-style exports, which count cached tokens inside input tokens, have them subtracted first, so no token is priced twice. The rule used is printed per file.
-- **Since prior:** with `--prior-window`, each line also shows its prior value and the change. Status is always against the budget, never against the prior window.
+- **Since then:** with `--prior-window`, each line also shows its value in the period before and the change. Status is always against the budget, never against the prior window.
 - **Spend with no brief** is listed with its priced cost and no status.
 - **The bill:** billed spend minus priced usage is shown as spend not in the usage given. A gap over 2% is a warning.
 - **A pricing table over 90 days old** at the as-of date is a warning.

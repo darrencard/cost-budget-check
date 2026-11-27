@@ -28,22 +28,24 @@ Install the cost-budget-check skill from https://github.com/darrencard/cost-budg
 `python3 scripts/check.py --demo` runs a second, smaller fixture bundled with the skill: two made-up Acme features, `visit-notes` and `quote-follow-up`, with their own briefs and budgets. It is not the quote-drafting bet in the Sample below. Acme is an invented company; every figure is illustrative.
 
 ```text
-| Feature         | Line            | Budget      | Actual      | Against budget | Prior       | Since prior | Status        |
-| quote-follow-up | Tokens per task | 3,000       | 2,900       | -3.3%          | 2,900       | +0.0%       | within budget |
-| quote-follow-up | Price per token | $0.00000120 | $0.00000137 | +14.4%         | $0.00000103 | +32.7%      | over budget   |
-| quote-follow-up | Cost per task   | $0.0036     | $0.0040     | +10.6%         | $0.0030     | +32.7%      | over budget   |
-| visit-notes     | Tokens per task | 12,000      | 13,500      | +12.5%         | 11,500      | +17.4%      | over budget   |
-| visit-notes     | Price per token | $0.00000400 | $0.00000328 | -17.9%         | $0.00000357 | -8.0%       | within budget |
-| visit-notes     | Cost per task   | $0.0480     | $0.0443     | -7.6%          | $0.0410     | +8.0%       | within budget |
+| Project         | Line              | Budget      | Actual      | Against budget | Before      | Since then | Status        |
+| Quote follow-up | AI usage per task | 3,000       | 2,900       | -3.3%          | 2,900       | +0.0%      | within budget |
+| Quote follow-up | AI price per unit | $0.00000120 | $0.00000137 | +14.4%         | $0.00000103 | +32.7%     | over budget   |
+| Quote follow-up | Cost per task     | $0.0036     | $0.0040     | +10.6%         | $0.0030     | +32.7%     | over budget   |
+| Visit notes     | AI usage per task | 12,000      | 13,500      | +12.5%         | 11,500      | +17.4%     | over budget   |
+| Visit notes     | AI price per unit | $0.00000400 | $0.00000328 | -17.9%         | $0.00000357 | -8.0%      | within budget |
+| Visit notes     | Cost per task     | $0.0480     | $0.0443     | -7.6%          | $0.0410     | +8.0%      | within budget |
 
-Driver: quote-follow-up on vendor-a/large, $88.29 over budget.
-quote-follow-up: 96.0% of tasks succeeded, so cost per successful task is $0.0041.
-Bill: $424.20 billed, $372.94 priced from usage, $51.26 not in the usage given.
+Largest part: Quote follow-up on the large model, $88.29 over budget.
+Quote follow-up: 96.0% of tasks succeeded, so each one that worked cost $0.0041.
+The bill: $424.20 billed, $372.94 priced from usage, $51.26 not in the usage given.
 ```
+
+The page and its twin use plain words for leaders: AI usage per task is tokens per task, AI price per unit is price per token, and models are named by price ("the large model" is the dearest). Model ids, line keys, files and flags print under "For your engineers".
 
 ## Sample
 
-[examples/acme/cost-budget-check.html](examples/acme/cost-budget-check.html) follows Acme's `quote-drafting` bet through the Landing Loop. It uses the canonical brief, copied unchanged into `examples/acme/briefs/`, and two weeks of gateway usage with drift: tokens per task, price per token and cost per task all over budget, driver `vendor-a/xl`. The page has a Markdown twin (`cost-budget-check.md`), and `examples/acme/landing/quote-drafting.json` holds only the `cost` key. Every figure is illustrative.
+[examples/acme/cost-budget-check.html](examples/acme/cost-budget-check.html) follows Acme's `quote-drafting` bet through the Landing Loop. It uses the canonical brief, copied unchanged into `examples/acme/briefs/`, and two weeks of gateway usage with drift: tokens per task, price per token and cost per task all over budget, driven by the large model (`vendor-a/xl`). The page has a Markdown twin (`cost-budget-check.md`), and `examples/acme/landing/quote-drafting.json` holds only the `cost` key. Every figure is illustrative.
 
 Regenerate it from the repository root (a test checks this command reproduces the committed files byte for byte):
 

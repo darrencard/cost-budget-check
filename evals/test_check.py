@@ -38,6 +38,7 @@ import page  # noqa: E402
 import pricing  # noqa: E402
 import readers  # noqa: E402
 import review  # noqa: E402
+import svgkit  # noqa: E402  (vendored from landing-loop, see vendor/VENDORED.json)
 
 ACME = SKILL / "assets" / "acme"
 WINDOW = "2026-11-01..2026-11-30"
@@ -260,7 +261,8 @@ class Acme(unittest.TestCase):
         top = self.result["drivers"][0]
         self.assertEqual((top["feature"], top["model"]), ("quote-follow-up", "vendor-a/large"))
         self.assertAlmostEqual(top["drift"], 112.5 - (1.95e7 / 2.61e8) * 324.0)
-        self.assertIn("**Driver:** quote-follow-up on vendor-a/large", self.report)
+        self.assertIn("**Largest part:** Quote follow-up on the large model", self.report)
+        self.assertIn("the large model is `vendor-a/large`", self.report.split("## For your engineers", 1)[1])
 
     def test_unbriefed_spend_and_the_bill(self):
         self.assertEqual([u["feature"] for u in self.result["unbriefed"]], ["search-assist"])
@@ -354,8 +356,8 @@ class Drift(unittest.TestCase):
         cls.tmp.cleanup()
 
     def test_demo_runs_on_the_bundled_sample(self):
-        self.assertIn("**Driver:** quote-follow-up on vendor-a/large", self.stdout)
-        self.assertIn("Since prior", self.stdout)
+        self.assertIn("**Largest part:** Quote follow-up on the large model", self.stdout)
+        self.assertIn("Since then", self.stdout)
 
     def test_change_since_the_prior_window(self):
         q = self.f["visit-notes"]["checks"]["tokens_per_task"]
@@ -399,7 +401,7 @@ class Drift(unittest.TestCase):
         i = self.f["quote-follow-up"]
         self.assertAlmostEqual(i["cost_per_success"], 358.38 / 86_400)
         self.assertEqual(i["success_rate_display"], "96.0%")
-        self.assertIn("cost per successful task is $0.0041", self.stdout)
+        self.assertIn("so each one that worked cost $0.0041", self.stdout)
 
     def test_refuses_more_successes_than_tasks(self):
         with tempfile.TemporaryDirectory() as d:
@@ -590,7 +592,7 @@ class LandingLoop(unittest.TestCase):
             page = (Path(d) / "cost_check.html").read_text(encoding="utf-8")
             self.assertNotRegex(page, r'(src|href)="https?://')
             self.assertIn("@font-face", page)
-            self.assertIn('<span class="bud">over budget</span>', page)
+            self.assertIn('<span class="bud over">over budget</span>', page)
             self.assertIn('<span class="bud">within budget</span>', page)
             self.assertNotIn('class="st ', page)
             self.assertNotIn('class="ac ', page)
@@ -658,8 +660,9 @@ class Sample(unittest.TestCase):
         template = (SKILL / "assets" / "leader-report-template.html").read_text(encoding="utf-8")
         self.assertIn(template[template.index("<style>") + 7 : template.index("</style>")], page_html)
         self.assertEqual(hashlib.sha256(template.encode("utf-8")).hexdigest(), "e5740431ab5269606709d352d3d253325df740830e8316f06478873e71d430d0")
-        for mark in ('class="sc-r"', 'class="bl"', 'class="pvr"', 'class="ill">Illustrative', 'class="facts"', '<span class="bud">over budget</span>'):
+        for mark in ('class="sk-hdr"', 'class="sk-wide"', 'class="sk-tall"', 'class="sk-ill">Illustrative', 'class="next"', '<span class="bud over">over budget</span>'):
             self.assertIn(mark, page_html)
+        self.assertIn(":root{--ill:#74A5DA}", page_html, "the Illustrative tag is blue")
 
     def test_the_sample_headline_names_the_bet_by_its_title(self):
         page_html = (ROOT / "examples" / "acme" / "cost-budget-check.html").read_text(encoding="utf-8")
@@ -672,6 +675,79 @@ class Sample(unittest.TestCase):
         # The vendored stylesheet paints both green; ours comes later in the page, so it wins.
         self.assertTrue(page_html[page_html.rindex("::selection") :].startswith("::selection{background:var(--t1);color:var(--bg)}"))
         self.assertTrue(page_html[page_html.rindex(":focus-visible") :].startswith(":focus-visible{outline-color:var(--t1)}"))
+
+
+class Visual(unittest.TestCase):
+    """The page in the Landing Loop's one visual family: drawn with svgkit, every drawn figure printed, plain words."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.page = (ROOT / "examples" / "acme" / "cost-budget-check.html").read_text(encoding="utf-8")
+        cls.twin = (ROOT / "examples" / "acme" / "cost-budget-check.md").read_text(encoding="utf-8")
+        cls.result = json.loads((ROOT / "examples" / "acme" / "cost-budget-check.json").read_text(encoding="utf-8"))
+
+    def test_svgkit_matches_its_landing_loop_pin(self):
+        import hashlib
+
+        pin = json.loads((SKILL / "scripts" / "vendor" / "VENDORED.json").read_text(encoding="utf-8"))["landing-loop"]
+        self.assertEqual(pin["commit"], "5d01756d08ab3eb92b457c3286729791df6bcf5f")
+        self.assertEqual(set(pin["files"]), {"svgkit.py"})
+        digest = hashlib.sha256((SKILL / "scripts" / "vendor" / "svgkit.py").read_bytes()).hexdigest()
+        self.assertEqual(digest, pin["files"]["svgkit.py"]["sha256"], "svgkit.py changed. Copy it again from landing-loop at the pinned commit.")
+
+    def test_the_page_follows_the_sample_anatomy(self):
+        body = self.page.split('<main class="solo">', 1)[1]
+        order = ['class="sk-hdr"', "<h1>Quote drafting is $1.89 over its cost budget, and the large model drives the largest part.</h1>", 'class="bud over"', 'class="sk-wide"', "What to do next", 'class="cols"', "For your engineers"]
+        at = [body.index(x) for x in order]
+        self.assertEqual(at, sorted(at))
+        self.assertEqual(body.count('<div class="next">'), 1)
+        self.assertIn('<span class="o">Head of Product, Quoting squad</span><span class="d">2026-11-29</span>', body)
+        self.assertIn("<details><summary>For your engineers</summary>", body)
+
+    def test_the_visual_draws_only_figures_the_page_prints(self):
+        visuals = svgkit.visuals_in(self.page)
+        self.assertEqual(len(visuals), 2, "the wide and the tall variant")
+        self.assertEqual(svgkit.unprinted(self.page), [])
+        for svg in visuals:
+            texts = svgkit.texts_in(svg)
+            for shown in ("10,300", "$0.00000328", "$0.0338", "$0.96", "$0.93"):
+                self.assertIn(shown, texts)
+            self.assertIn("The large model", texts)
+            self.assertIn('fill="url(#sk-cb-0-', svg, "the part over budget is hatched")
+
+    def test_the_visual_states_the_answer(self):
+        for svg in svgkit.visuals_in(self.page):
+            self.assertIn('role="img"', svg)
+            label = re.search(r'aria-label="([^"]+)"', svg).group(1)
+            self.assertEqual(
+                label,
+                "Quote drafting is over budget: AI usage per task 10,300 against 9,000 (+14.4%, over budget); "
+                "AI price per unit $0.00000328 against $0.00000300 (+9.3%, over budget); cost per task $0.0338 against $0.0270 (+25.0%, over budget). "
+                "The large model drives the largest part: $0.96 of the $1.89 over budget.",
+            )
+
+    def test_green_only_beside_landed_and_brass_only_for_who_decides(self):
+        body = self.page.split("</style>", 1)[1]
+        for token in ("var(--landed)", "var(--watch)", "var(--stalled)", "sk-st", 'class="st '):
+            self.assertNotIn(token, body, "this page prints neither landed nor stalled, so it paints neither colour")
+        css = self.page.split("<style>", 1)[1].split("</style>", 1)[0]
+        own = css[css.index("main.solo{margin-left:0}") :]
+        self.assertNotRegex(own, r"--(?:landed|watch|stalled)")
+        brass = re.findall(r"[^}]*var\(--brass[^}]*}", own)
+        self.assertTrue(brass and all(r.lstrip("}").lstrip().startswith(".next") for r in brass), "brass is only who decides the next step")
+        self.assertNotIn("var(--brass)", "".join(svgkit.visuals_in(self.page)))
+
+    def test_public_copy_uses_plain_words(self):
+        public = {"page": svgkit.page_text(self.page.split("For your engineers", 1)[0]).lower(), "twin": self.twin.split("## For your engineers", 1)[0].lower()}
+        for name, text in public.items():
+            with self.subTest(output=name):
+                for word in (r"\btokens?\b", r"price per token", r"\bcache\b", r"vendor-a", r"\bbets?\b", r"\bdrift\b", r"\.json", r"\.jsonl", r"(?<![-|])--[a-z]", r"\bfeature\b"):
+                    self.assertIsNone(re.search(word, text), word)
+        self.assertIn("the landing brief, a one-page plan: what good looks like, by when, at what cost", self.page)
+        self.assertIn("the large model is <code>vendor-a/xl</code>", self.page)
+
+    def test_models_are_named_by_price(self):
+        self.assertEqual(page.model_names(self.result), {"vendor-a/xl": "the large model", "vendor-a/large": "the standard model"})
 
 
 class Demo(unittest.TestCase):
@@ -798,7 +874,7 @@ class House(unittest.TestCase):
     def test_versions_agree(self):
         plugin = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]
         skill = re.search(r'version: "([^"]+)"', (SKILL / "SKILL.md").read_text(encoding="utf-8")).group(1)
-        self.assertEqual({plugin, skill, check.VERSION}, {"0.3.1"})
+        self.assertEqual({plugin, skill, check.VERSION}, {"0.3.2"})
 
     def test_fixture_prices_are_marked_illustrative(self):
         data = json.loads((ACME / "pricing.json").read_text(encoding="utf-8"))

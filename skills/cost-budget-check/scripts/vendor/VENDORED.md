@@ -19,3 +19,9 @@ assets/leader-report-template.html is skills/product-engineering-update/assets/t
 commit, byte-identical (sha256 e5740431ab5269606709d352d3d253325df740830e8316f06478873e71d430d0). scripts/page.py
 reads its style block (tokens and embedded Geist, Geist Mono and Instrument Sans, SIL Open Font License) at
 render time, so the page is in the same brand family as the Leader Report with no network.
+
+## From landing-loop
+
+svgkit.py is landing-loop's tools/svgkit.py at commit 5d01756d08ab3eb92b457c3286729791df6bcf5f, byte-identical
+(sha256 8526cf100159a9e5a8958bba4ceb0373a7edc265f481d63795d1731a5999d054), pinned in VENDORED.json beside this file
+under `landing-loop`. scripts/page.py draws the page's pictures with it, in the Landing Loop's one visual family.

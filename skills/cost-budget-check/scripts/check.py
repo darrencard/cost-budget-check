@@ -61,7 +61,7 @@ import pricing as pricing_mod  # noqa: E402
 import readers  # noqa: E402
 
 TOOL = "cost-budget-check"
-VERSION = "0.3.1"
+VERSION = "0.3.2"
 WITHIN = "within budget"
 OVER = "over budget"
 RECONCILE_TOLERANCE = 0.02
@@ -297,7 +297,7 @@ def run(args: argparse.Namespace) -> Json:
             unbriefed.append({"feature": name, "cost": cost, "cost_display": fmt_money(cost), "files": files})
             continue
         b = budgets[name]
-        f: Json = {"feature": name, "title": b.title or name, "brief": b.source, "brief_path": b.path, "brief_sha256": b.sha256, "metric": b.metric, "line": b.line, "files": files, "checks": {}, "models": [], "gaps": []}
+        f: Json = {"feature": name, "title": b.title or name, "brief": b.source, "brief_path": b.path, "brief_sha256": b.sha256, "metric": b.metric, "line": b.line, "decides": b.decides, "files": files, "checks": {}, "models": [], "gaps": []}
         if b.line == "fixed code":
             f["gaps"].append("the brief puts this feature in fixed code, so it has no model budget to check.")
             if recs:
@@ -469,62 +469,76 @@ def run(args: argparse.Namespace) -> Json:
     return result
 
 
-LABEL = {"tokens_per_task": "Tokens per task", "price_per_token": "Price per token", "cost_per_task": "Cost per task"}
-
-
 def render(result: Json) -> str:
+    """The Markdown twin of the page: the same plain words, with model ids, files and flags under "For your engineers"."""
     p = result["pricing"]
-    out = [f"# Cost budget check, {result['window'] or 'all usage given'}", ""]
+    models = page.model_names(result)
+    out = [f"# Cost budget check, {page.window_text(result) if result['window'] else 'all usage given'}", ""]
+    if p["illustrative"]:
+        out += ["*Illustrative: sample prices, not any provider's list price.*", ""]
+    out += [f"**{page.headline(result)}**", "", page.lede(result), ""]
     if result.get("prior_window"):
-        out.append(f"Prior window {result['prior_window']}, for the change in each line.")
-    gate = f" The --fail-on gate lets a line run {result['tolerance'] * 100:.0f}% over budget." if result["tolerance"] else ""
-    out.append(f"As of {result['as_of']}.{gate}")
-    out.append(f"Prices: {p['file']}, {p['source'].rstrip('.')}, retrieved {p['retrieved']}.{' Illustrative prices.' if p['illustrative'] else ''}")
-    out.append("")
+        out += [f"The period before, for the change in each line: {page.window_text({'window': result['prior_window'], 'window_used': {}})}. As of {result['as_of']}.", ""]
+    else:
+        out += [f"As of {result['as_of']}.", ""]
+    text, decides, due = page.next_step(result)
+    out += ["## What to do next", "", f"{text}" + (f" Decides: {decides}." if decides else "") + f" Due: {due}.", ""]
     since = bool(result.get("prior_window"))
-    out.append("| Feature | Line | Budget | Actual | Against budget |" + (" Prior | Since prior |" if since else "") + " Status |")
+    out += ["## Each line against the budget", ""]
+    out.append("| Project | Line | Budget | Actual | Against budget |" + (" Before | Since then |" if since else "") + " Status |")
     out.append("|---|---|---|---|---|" + ("---|---|" if since else "") + "---|")
     for f in result["features"]:
-        for key in ("tokens_per_task", "price_per_token", "cost_per_task"):
+        for key in page.LINES:
             c = f["checks"].get(key)
             if c:
                 extra = f" {c.get('prior_display', 'none')} | {c.get('change_display', 'none')} |" if since else ""
-                out.append(f"| {f['feature']} | {LABEL[key]} | {c['budget_display']} | {c['actual_display']} | {c['over_display']} |{extra} {c['status']} |")
+                out.append(f"| {page.name(f)} | {page.LABEL[key]} | {c['budget_display']} | {c['actual_display']} | {c['over_display']} |{extra} {c['status']} |")
         if not f["checks"]:
-            out.append(f"| {f['feature']} | none checked | | | | |")
+            out.append(f"| {page.name(f)} | none checked | | | |" + (" | |" if since else "") + " |")
     out.append("")
+    out += ["## Where the money went", ""]
     if result["drivers"]:
         top = result["drivers"][0]
-        out.append(f"**Driver:** {top['feature']} on {top['model']}, {top['drift_display']} over budget.")
+        out.append(f"**Largest part:** {page.name_of(result, top['feature'])} on {models.get(top['model'], top['model'])}, {top['drift_display']} over budget.")
         out.append("")
-        out.append("| Feature | Model | Share of tokens | Price per token | Priced cost | Over budget |")
+        out.append("| Project | Model | Share of AI usage | AI price per unit | Spent | Over budget |")
         out.append("|---|---|---|---|---|---|")
         for f in result["features"]:
-            for m in f.get("models", []):
-                out.append(f"| {f['feature']} | {m['model']} | {m['share_display']} | {m['price_per_token_display']} | {m['cost_display']} | {m['drift_display']} |")
+            for m in sorted(f.get("models", []), key=lambda m: -m["drift"]):
+                out.append(f"| {page.name(f)} | {models.get(m['model'], m['model'])} | {m['share_display']} | {m['price_per_token_display']} | {m['cost_display']} | {m['drift_display']} |")
         out.append("")
+        out.append("Cost over budget is split by model as each model's cost minus its share of the budget by usage, so the parts add up. It shows where the money went, not why.")
     else:
-        out.append("**Driver:** none. No feature and model is over budget.")
-        out.append("")
+        out.append("No project and model is over budget.")
+    out.append("")
     for f in result["features"]:
         if f.get("cost_per_success_display"):
-            out.append(f"**{f['feature']}:** {f['success_rate_display']} of tasks succeeded, so cost per successful task is {f['cost_per_success_display']}. No budget line covers it; it is shown, not marked.")
+            out.append(f"**{page.name(f)}:** {f['success_rate_display']} of tasks succeeded, so each one that worked cost {f['cost_per_success_display']}. No budget line covers it; it is shown, not marked.")
             out.append("")
     if "reconcile" in result:
         r = result["reconcile"]
-        out.append(f"**Bill:** {r['billed_display']} billed, {r['priced_display']} priced from usage, {r['unattributed_display']} not in the usage given.")
+        out.append(f"**The bill:** {r['billed_display']} billed, {r['priced_display']} priced from usage, {r['unattributed_display']} not in the usage given.")
         out.append("")
+    out += ["## Worth knowing", ""]
     for u in result["unbriefed"]:
-        out.append(f"- {u['feature']}: {u['cost_display']} priced, with no landing brief, so no budget to check.")
+        out.append(f"- {u['feature']}: {u['cost_display']} spent with no landing brief, so no budget to check.")
+    out += [f"- {x}" for x in page.worth_knowing(result)]
+    out += ["", "## For your engineers", ""]
+    if models:
+        out.append("- Models: " + "; ".join(f"{n} is `{m}`" for m, n in models.items()) + ".")
+    out.append("- Line keys: `tokens_per_task` (tokens: input, output, cache read and cache write), `price_per_token` (priced cost over tokens, so cache reads pull it down) and `cost_per_task`.")
     for f in result["features"]:
-        for g in f["gaps"]:
-            out.append(f"- {f['feature']}: {g}")
         if f.get("tasks_source"):
             out.append(f"- {f['feature']}: tasks from {f['tasks_source']}.")
+        for g in f["gaps"]:
+            out.append(f"- {f['feature']}: {g}")
     for w in result["warnings"]:
         out.append(f"- Warning: {w}")
     for n in result["notes"]:
         out.append(f"- Read: {n}")
+    out.append(f"- Prices: {p['file']}, {p['source'].rstrip('.')}, retrieved {p['retrieved']}.")
+    gate = f" The --fail-on gate lets a line run {result['tolerance'] * 100:.0f}% over budget." if result["tolerance"] else ""
+    out.append(f"- `--landing` and `--bet` add the `cost` key to `landing/<bet>.json`. `--fail-on over-budget` fails the run, for a CI gate, when a line is over budget.{gate}")
     out.append("")
     out.append("Every figure above is in the JSON beside this file, with its formula and sources. The check shows where spend went against budget, not why.")
     return "\n".join(out) + "\n"

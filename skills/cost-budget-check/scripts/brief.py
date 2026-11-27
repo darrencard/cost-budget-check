@@ -40,6 +40,7 @@ class Budget:
     sha256: str = ""
     metric: str = ""
     title: str = ""
+    decides: str = ""
 
     @property
     def cost_per_task(self) -> float | None:
@@ -63,7 +64,7 @@ def parse(text: str, feature: str, source: str) -> Budget:
     zero = [k.replace("_", " ") for k in ("tokens_per_task", "price_per_token") if getattr(b, k) is not None and getattr(b, k) <= 0]
     if zero:
         raise BriefError(f"{source}: the cost budget cannot be used:\n  " + "\n  ".join(f"{k} must be above zero." for k in zero))
-    return Budget(feature, b.tokens_per_task, b.price_per_token, b.line, source, metric=b.metric, title=title_of(text))
+    return Budget(feature, b.tokens_per_task, b.price_per_token, b.line, source, metric=b.metric, title=title_of(text), decides=b.decides)
 
 
 def load(path: Path, feature: str) -> Budget:
@@ -73,4 +74,4 @@ def load(path: Path, feature: str) -> Budget:
         raise BriefError(str(e)) from None
     b = parse(text, feature, path.name)
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    return Budget(b.feature, b.tokens_per_task, b.price_per_token, b.line, b.source, str(path), digest, b.metric, b.title)
+    return Budget(b.feature, b.tokens_per_task, b.price_per_token, b.line, b.source, str(path), digest, b.metric, b.title, b.decides)
