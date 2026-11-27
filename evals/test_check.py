@@ -660,7 +660,7 @@ class Sample(unittest.TestCase):
         template = (SKILL / "assets" / "leader-report-template.html").read_text(encoding="utf-8")
         self.assertIn(page.floor_fonts(template[template.index("<style>") + 7 : template.index("</style>")]), page_html)
         self.assertEqual(hashlib.sha256(template.encode("utf-8")).hexdigest(), "e5740431ab5269606709d352d3d253325df740830e8316f06478873e71d430d0")
-        for mark in ('class="sk-hdr"', 'class="sk-wide"', 'class="sk-tall"', 'class="sk-ill">Illustrative', 'class="next"', '<span class="bud over">over budget</span>'):
+        for mark in ('class="sk-hdr"', '<div class="sc scg"', 'class="sc-i">Illustrative', 'class="next"', '<span class="bud over">over budget</span>'):
             self.assertIn(mark, page_html)
         self.assertIn(":root{--ill:#74A5DA}", page_html, "the Illustrative tag is blue")
 
@@ -690,14 +690,14 @@ class Visual(unittest.TestCase):
         import hashlib
 
         pin = json.loads((SKILL / "scripts" / "vendor" / "VENDORED.json").read_text(encoding="utf-8"))["landing-loop"]
-        self.assertEqual(pin["commit"], "5d01756d08ab3eb92b457c3286729791df6bcf5f")
+        self.assertEqual(pin["commit"], "78784efd2ecd5282f6ec264e545ce2075e459be2")
         self.assertEqual(set(pin["files"]), {"svgkit.py"})
         digest = hashlib.sha256((SKILL / "scripts" / "vendor" / "svgkit.py").read_bytes()).hexdigest()
         self.assertEqual(digest, pin["files"]["svgkit.py"]["sha256"], "svgkit.py changed. Copy it again from landing-loop at the pinned commit.")
 
     def test_the_page_follows_the_sample_anatomy(self):
         body = self.page.split('<main class="solo">', 1)[1]
-        order = ['class="sk-hdr"', "<h1>Quote drafting is $1.89 over its cost budget, and the large model drives the largest part.</h1>", 'class="bud over"', 'class="sk-wide"', "What to do next", 'class="cols"', "For your engineers"]
+        order = ['class="sk-hdr"', "<h1>Quote drafting is $1.89 over its cost budget, and the large model drives the largest part.</h1>", 'class="bud over"', '<div class="sc scg"', "What to do next", 'class="cols"', "For your engineers"]
         at = [body.index(x) for x in order]
         self.assertEqual(at, sorted(at))
         self.assertEqual(body.count('<div class="next">'), 1)
@@ -705,26 +705,72 @@ class Visual(unittest.TestCase):
         self.assertIn("<details><summary>For your engineers</summary>", body)
 
     def test_the_visual_draws_only_figures_the_page_prints(self):
-        visuals = svgkit.visuals_in(self.page)
-        self.assertEqual(len(visuals), 2, "the wide and the tall variant")
         self.assertEqual(svgkit.unprinted(self.page), [])
-        for svg in visuals:
-            texts = svgkit.texts_in(svg)
-            for shown in ("10,300", "$0.00000328", "$0.0338", "$0.96", "$0.93"):
-                self.assertIn(shown, texts)
-            self.assertIn("The large model", texts)
-            self.assertIn('fill="url(#sk-cb-0-', svg, "the part over budget is hatched")
+        frame = svgkit.frames_in(self.page)[0]
+        for line in (
+            '<span class="sc-l">9,000 <i>→</i> <b>10,300</b> · +14.4%</span>',
+            '<span class="sc-l">$0.00000300 <i>→</i> <b>$0.00000328</b> · +9.3%</span>',
+            '<span class="sc-l">$0.0270 <i>→</i> <b>$0.0338</b> · +25.0%</span>',
+            '<span class="sc-l">$0.76 <i>→</i> <b>$1.72</b> · +$0.96</span>',
+            '<span class="sc-l">$6.80 <i>→</i> <b>$7.73</b> · +$0.93</span>',
+        ):
+            self.assertIn(line, frame)
+        self.assertEqual(frame.count('fill="url(#cb-0-'), 5, "the part over budget is hatched, once a row")
+        ids = re.findall(r'<pattern id="([^"]+)"', self.page)
+        self.assertEqual(len(ids), len(set(ids)), "each paired_bars call has its own hatch id")
 
     def test_the_visual_states_the_answer(self):
-        for svg in svgkit.visuals_in(self.page):
-            self.assertIn('role="img"', svg)
-            label = re.search(r'aria-label="([^"]+)"', svg).group(1)
-            self.assertEqual(
-                label,
+        labels = re.findall(r'role="img" aria-label="([^"]+)"', self.page)
+        self.assertEqual(
+            labels,
+            [
                 "Quote drafting is over budget: AI usage per task 10,300 against 9,000 (+14.4%, over budget); "
                 "AI price per unit $0.00000328 against $0.00000300 (+9.3%, over budget); cost per task $0.0338 against $0.0270 (+25.0%, over budget). "
-                "The large model drives the largest part: $0.96 of the $1.89 over budget.",
-            )
+                "The large model drives the largest part: $0.96 of the $1.89 over budget."
+            ],
+        )
+
+    # The scorecard grammar (landing-loop tools/SCORECARD-ROLLOUT.md, svgkit 1.2.0)
+
+    def css(self):
+        return self.page.split("<style>", 1)[1].split("</style>", 1)[0]
+
+    def test_one_frame_one_row_per_line_and_model(self):
+        frames = svgkit.frames_in(self.page)
+        self.assertEqual(len(frames), 1)
+        names = re.findall(r'<span class="sc-n">([^<]+)</span>', frames[0])
+        self.assertEqual(names, ["AI usage per task", "AI price per unit", "Cost per task", "Cost on the large model", "Cost on the standard model"])
+        self.assertEqual(frames[0].count('<span class="sc-w ink">OVER BUDGET</span>'), 5)
+
+    def test_no_text_inside_a_picture_and_no_scaled_picture(self):
+        self.assertEqual(svgkit.svgs_with_text(self.page), [])
+        self.assertEqual(svgkit.scaled_svgs_in(self.page), [])
+
+    def test_labels_render_12px_and_names_14px(self):
+        css = self.css()
+        self.assertEqual(set(svgkit.font_sizes(css)), {"var(--sc-m)", "var(--sc-n)"})
+        self.assertIn("--sc-m:calc(12px / var(--sc-z))", css)
+        self.assertIn("--sc-n:calc(14px / var(--sc-z))", css)
+        self.assertIn(".scg{--sc-z:1;", css, "a sample page has no zoom")
+
+    def test_no_box_inside_the_frame_and_no_overlap(self):
+        self.assertEqual(svgkit.boxes_in_frames(self.page, self.css()), [])
+        self.assertNotIn("position:absolute", svgkit.SCORECARD_CSS)
+        self.assertNotIn('class="chip"', self.page.split("For your engineers", 1)[0])
+        self.assertNotIn('class="panel"', self.page, "no card around the frame")
+
+    def test_no_legacy_svgkit_primitive_draws_on_the_page(self):
+        import warnings
+
+        self.assertEqual(svgkit.legacy_in(self.page), [])
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            page.render(self.result)
+
+    def test_no_status_colour_in_the_frame(self):
+        frame = svgkit.frames_in(self.page)[0]
+        self.assertNotIn('class="ac ', frame, "a budget check sets no landed, watch or stalled")
+        self.assertNotIn('class="st ', frame)
 
     def test_green_only_beside_landed_and_brass_only_for_who_decides(self):
         body = self.page.split("</style>", 1)[1]
@@ -735,7 +781,7 @@ class Visual(unittest.TestCase):
         self.assertNotRegex(own, r"--(?:landed|watch|stalled)")
         brass = re.findall(r"[^}]*var\(--brass[^}]*}", own)
         self.assertTrue(brass and all(r.lstrip("}").lstrip().startswith(".next") for r in brass), "brass is only who decides the next step")
-        self.assertNotIn("var(--brass)", "".join(svgkit.visuals_in(self.page)))
+        self.assertNotIn("var(--brass)", "".join(svgkit.frames_in(self.page)))
 
     def test_public_copy_uses_plain_words(self):
         public = {"page": svgkit.page_text(self.page.split("For your engineers", 1)[0]).lower(), "twin": self.twin.split("## For your engineers", 1)[0].lower()}
@@ -755,15 +801,13 @@ class Visual(unittest.TestCase):
         self.assertNotRegex(css, r"font-size\s*:\s*[\d.]+r?em")
         before, after = ".a{font:400 10px/16px var(--mono)}.b{font-size:10.5px}.c{font-size:13px}", ".a{font:400 11px/16px var(--mono)}.b{font-size:11px}.c{font-size:13px}"
         self.assertEqual(page.floor_fonts(before), after)
-        # The phone picture is 340 wide; on a 390px screen the panel gives it 356px, so its 11px labels never shrink.
-        self.assertIn("@media (max-width:440px){.panel{margin:0 -8px;padding:16px 8px 14px}}", self.page)
 
     def test_the_header_prints_the_plain_name_and_the_code_name_is_for_engineers(self):
         meta = re.search(r'<span class="sk-meta"><span>(.*?)</span>', self.page).group(1)
         self.assertEqual(meta, "Cost budget check")
         public, fold = self.page.split("For your engineers", 1)
         self.assertNotIn("cost-budget-check", svgkit.page_text(public).lower())
-        self.assertIn("cost-budget-check 0.3.2", fold)
+        self.assertIn("cost-budget-check 0.3.3", fold)
 
     def test_models_are_named_by_price(self):
         self.assertEqual(page.model_names(self.result), {"vendor-a/xl": "the large model", "vendor-a/large": "the standard model"})
@@ -786,7 +830,7 @@ class Demo(unittest.TestCase):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         section = readme[readme.index("## What you see") : readme.index("## Sample")]
         self.assertIn("second, smaller fixture", section)
-        self.assertIn("not the quote-drafting bet", section)
+        self.assertIn("not the quote-drafting project", section)
         for old in ("quote-drafter", "invoice-chaser"):
             self.assertNotIn(old, readme)
 
@@ -893,7 +937,7 @@ class House(unittest.TestCase):
     def test_versions_agree(self):
         plugin = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]
         skill = re.search(r'version: "([^"]+)"', (SKILL / "SKILL.md").read_text(encoding="utf-8")).group(1)
-        self.assertEqual({plugin, skill, check.VERSION}, {"0.3.2"})
+        self.assertEqual({plugin, skill, check.VERSION}, {"0.3.3"})
 
     def test_fixture_prices_are_marked_illustrative(self):
         data = json.loads((ACME / "pricing.json").read_text(encoding="utf-8"))

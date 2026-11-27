@@ -7,14 +7,17 @@ byte-identical as assets/leader-report-template.html (see scripts/vendor/VENDORE
 with svgkit (scripts/vendor/svgkit.py, vendored byte-identical from landing-loop and pinned in
 scripts/vendor/VENDORED.json). Only a few rules for this page's layout are added.
 
-It reads top down for someone who has never seen a token: the shared header, the verdict as the heading, the
-budget word, then one picture per project: each budget line as a bar against its budget notch, the part over
-hatched, and the cost over budget split by model. Then one thing to do next, owned by the person the landing
-brief names, and the detail in two columns. Model ids, line keys, flags, files and the evidence ledger fold
-under "For your engineers". Public copy uses plain words: AI usage per task, AI price per unit, cheaper repeat
-reads, the large model.
+It reads top down for someone who has never seen a token: the shared header, the verdict as the heading,
+the budget word, then one scorecard frame per project in the grammar of the /update outcome scorecard (svgkit
+1.2.0): HTML rows split by hairlines, one per budget line (AI usage per task, AI price per unit, cost per task),
+each with paired bars (budget grey above, actual ink below, the part over hatched), the figure
+`budget → actual · over` and the check word; then one row per model, its share of the budget against its cost.
+Geist Mono 12px for labels, figures and words, Geist 14px for names, and no text inside any picture. Then one
+thing to do next, owned by the person the landing brief names, and the detail in two columns. Model ids, line
+keys, flags, files and the evidence ledger fold under "For your engineers". Public copy uses plain words: AI
+usage per task, AI price per unit, cheaper repeat reads, the large model.
 
-within budget and over budget are this check's own words and print in ink. Green, grey-white and red mean a
+within budget and over budget are this check's own words, printed as text: over budget in ink, within budget muted. Green, grey-white and red mean a
 project's landed, watch and stalled, which only did-it-land sets, so this page uses none of them. Brass is the
 person who decides the next step. Every figure is a display string from the ledger; the page computes only the
 positions of marks. Every piece of text is escaped. The page needs no network.
@@ -72,13 +75,11 @@ main.solo{margin-left:0}
 .solo .slide.cover{min-height:0;padding-top:40px;padding-bottom:48px;justify-content:flex-start}
 .solo h1{font-size:clamp(34px,4.6vw,60px);line-height:1;letter-spacing:-.04em;max-width:22ch;margin-bottom:20px}
 .solo .lede{margin-bottom:24px}
-.bud{display:inline-block;font:400 11px/16px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--t1);border:1px solid var(--line3);border-radius:3px;padding:1px 6px;white-space:nowrap}
-.bud.over{background:var(--t1);color:var(--bg);border-color:var(--t1)}
+.bud{display:inline-block;font:400 12px/16px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--t3);white-space:nowrap}
+.bud.over{color:var(--t1)}
 .verdict{margin:0 0 20px}
-.panel{border:1px solid var(--line);border-radius:12px;background:var(--s1);padding:24px 28px 20px}
-.panel h3{margin:0 0 14px}
-.panel .sk+h3{margin-top:32px}
-@media (min-width:1100px){.panel .sk{display:grid;grid-template-columns:720px minmax(0,1fr);gap:16px 40px;align-items:center}.panel .sk figcaption{margin-top:0;flex-direction:column;align-items:flex-start}}
+.cards h3{margin:0 0 8px}
+.cards .scg+h3{margin-top:32px}
 .next{margin-top:28px;display:grid;grid-template-columns:200px minmax(0,1fr);gap:8px 32px;align-items:baseline;border:1px solid var(--brass);border-radius:12px;padding:20px 24px;background:var(--brass-bg)}
 .next>b{font:400 11px/22px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--brass)}
 .next p{margin:0;font-size:16px;line-height:1.5;color:var(--t1)}
@@ -108,12 +109,11 @@ main.solo{margin-left:0}
 ::selection{background:var(--t1);color:var(--bg)}
 :focus-visible{outline-color:var(--t1)}
 .foot{max-width:1120px;margin:0 auto;padding:28px 40px 64px;color:var(--t3);font-size:12px}
-@media (max-width:980px){.foot{padding:24px 16px 48px}.solo .slide.cover{padding-top:24px}.cols,.next{grid-template-columns:1fr}.panel{padding:18px 16px 16px}
+@media (max-width:980px){.foot{padding:24px 16px 48px}.solo .slide.cover{padding-top:24px}.cols,.next{grid-template-columns:1fr}
 .stack table,.stack tbody,.stack tr,.stack td{display:block}.stack tr:first-child{display:none}.stack tr{padding:10px 16px;border-bottom:1px solid var(--line)}
 .stack td{border:0;padding:3px 0;display:grid;grid-template-columns:104px 1fr;gap:12px}.stack td.num{text-align:left;white-space:normal}
 .stack td::before{content:attr(data-l);font:400 11px/20px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--t3)}}
 @media (max-width:560px){.figs>div{grid-template-columns:1fr;gap:0}}
-@media (max-width:440px){.panel{margin:0 -8px;padding:16px 8px 14px}}
 """
 
 
@@ -262,65 +262,54 @@ def answer(result: Json, f: Json) -> str:
     return text + "."
 
 
-def bars(result: Json, f: Json, index: int, variant: str) -> str:
-    """Each budget line as a bar against its budget notch, the part over hatched; a hollow dot marks the two
-    period before. Under them, the cost over budget split by model, the largest part in ink."""
-    wide = variant == "wide"
-    width = float(sk.WIDE if wide else sk.TALL)
-    track = 470.0 if wide else width
-    hid = f"sk-cb-{index}-{variant}"
-    parts = [sk.defs(sk.hatch_pattern(hid))]
-    y = 14.0
+def scorecard(result: Json, f: Json, index: int) -> str:
+    """One frame of scorecard rows: each budget line as paired bars (budget grey above, actual ink below, the part
+    over hatched), each on its own scale because the three lines are in different units; then each model's share
+    of the budget against its cost, on one scale for the models. The figure prints `budget → actual · over`."""
+    rows = []
     for key in LINES:
         c = f["checks"].get(key)
         if not c:
             continue
-        prior = c.get("prior")
-        top = max(c["budget"], c["actual"], prior or 0) * 1.12 or 1
-        x = sk.scale((0, top), (0, track))
-        parts.append(sk.label(0, y, LABEL[key], tone=sk.INK))
-        bar_y = y + 12
-        if wide:
-            parts.append(sk.label(x(c["budget"]), y, "budget", anchor="middle"))
-            parts.append(sk.value(492, bar_y + 11, c["actual_display"], size=16))
-            parts.append(sk.label(492, bar_y + 29, f"budget {c['budget_display']} · {c['over_display']}"))
-        else:
-            parts.append(sk.value(width, y + 1, c["actual_display"], anchor="end", size=15))
-        parts.append(sk.rule(0, bar_y + 6, track, bar_y + 6, tone=sk.LINE))
-        parts.append(sk.hbar(0, bar_y, actual=x(c["actual"]), budget=x(c["budget"]), height=12, tone=sk.INK2, hatch_id=hid))
-        if prior is not None:
-            parts.append(sk.hollow(x(prior), bar_y + 6, r=3.5, tone=sk.INK))
-        if wide:
-            y = bar_y + 56
-        else:
-            parts.append(sk.label(0, bar_y + 32, f"budget {c['budget_display']} · {c['over_display']}"))
-            y = bar_y + 62
-    over = sorted((m for m in f.get("models", []) if m["drift"] > 0), key=lambda m: -m["drift"])
-    if over:
-        models = model_names(result)
-        y += 6
-        parts.append(sk.rule(0, y - 14, width, y - 14, tone=sk.LINE))
-        parts.append(sk.label(0, y + 6, f"Over budget by model · {f['drift_display']}", tone=sk.INK))
-        total = sum(m["drift"] for m in over)
-        x = sk.scale((0, total), (0, track))
-        at, sy = 0.0, y + 18
-        for i, m in enumerate(over):
-            w = x(m["drift"])
-            fill = sk.INK if i == 0 else sk.MUTED
-            parts.append(sk.tile(at, sy, max(1.0, w - (2 if i < len(over) - 1 else 0)), 14, filled=True, tone=fill))
-            at += w
-        ky = sy + 38
-        for i, m in enumerate(over):
-            tone = sk.INK if i == 0 else sk.MUTED
-            parts.append(sk.tile(0, ky - 9, 10, 10, filled=True, tone=tone))
-            parts.append(sk.value(18, ky, cap(models.get(m["model"], m["model"])), size=14, tone=sk.INK if i == 0 else sk.INK2))
-            right = 492 if wide else width
-            parts.append(sk.value(right, ky, m["drift_display"], anchor="start" if wide else "end", size=14, tone=sk.INK if i == 0 else sk.INK2))
-            if wide:
-                parts.append(sk.label(570, ky, f"{m['share_display']} of usage"))
-            ky += 24
-        y = ky - 10
-    return sk.frame("".join(parts), label=answer(result, f), height=y + 4, width=width, variant=variant)
+        top = max(c["budget"], c["actual"])
+        rows.append(
+            sk.sc_row(
+                LABEL[key],
+                picture=sk.paired_bars(c["budget"], c["actual"], top=top, hatch_id=f"cb-{index}-{key}"),
+                figure=sk.figure_line(c["actual_display"], prior=c["budget_display"], tail=c["over_display"]),
+                word=budget_word(c["status"]),
+            )
+        )
+    models = model_names(result)
+    ranked = sorted(f.get("models", []), key=lambda m: -m["drift"])
+    top = max((max(m["budget"], m["cost"]) for m in ranked), default=0.0)
+    for m in ranked:
+        rows.append(
+            sk.sc_row(
+                f"Cost on {models.get(m['model'], m['model'])}",
+                picture=sk.paired_bars(m["budget"], m["cost"], top=top, hatch_id=f"cb-{index}-m{len(rows)}"),
+                figure=sk.figure_line(m["cost_display"], prior=m["budget_display"], tail=("+" if m["drift"] > 0 else "") + m["drift_display"]),
+                word=budget_word("over budget" if m["drift"] > 0 else "within budget"),
+            )
+        )
+    key_marks = sk.legend("plan", "budget") + sk.legend("actual", "actual") + sk.legend("over", "over budget")
+    caption = "Each row is a budget line, its budget in grey above its actual in ink, each on its own scale; the hatched part is over budget." + (
+        " The cost rows split the spend by model: each model's share of the budget against what it cost, on one scale." if ranked else ""
+    )
+    return sk.sc_frame(
+        rows,
+        label=answer(result, f),
+        title="Cost budget",
+        head=["Budget line", "", "Budget → actual · over", "Check"],
+        legend=key_marks,
+        caption=caption,
+        illustrative=result["pricing"]["illustrative"],
+    )
+
+
+def budget_word(word: str) -> str:
+    """The contract's two words as a check word: over budget in ink, within budget muted. Never a status colour."""
+    return sk.check_word(word.upper(), ink=word == "over budget")
 
 
 # The detail
@@ -346,7 +335,7 @@ class Table:
 
 
 def status(word: str | None) -> str:
-    """within budget or over budget, as plain words in ink, with no status colour."""
+    """within budget or over budget, as plain mono words (over in ink, within muted), with no box and no status colour."""
     if word in ("within budget", "over budget"):
         return f'<span class="bud{" over" if word == "over budget" else ""}">{e(word)}</span>'
     return '<span class="bud">not checked</span>'
@@ -445,18 +434,13 @@ def render(result: Json) -> str:
     pics = []
     checked = [f for f in result["features"] if f["checks"]]
     for i, f in enumerate(checked):
-        cap_text = (
-            "Each bar is a line's actual figure against its budget notch; the hatched part is over budget. "
-            + ("The open dot is the period before. " if any("prior" in c for c in f["checks"].values()) else "")
-            + ("Under them, the cost over budget split by model, the largest part in ink." if any(m["drift"] > 0 for m in f.get("models", [])) else "")
-        )
         head = f"<h3>{e(name(f))}</h3>" if len(checked) > 1 else ""
-        pics.append(head + sk.figure(bars(result, f, i, "wide"), bars(result, f, i, "tall"), caption=cap_text.strip(), illustrative=p["illustrative"]))
+        pics.append(head + scorecard(result, f, i))
     overall = "over budget" if any(f.get("status") == "over budget" for f in result["features"]) else ("within budget" if checked else None)
     text, decides, due = next_step(result)
     who = f'<span class="o">{e(decides)}</span>' if decides else ""
     step = f'<div class="next"><b>What to do next</b><div><p>{e(text)}</p><span class="who">{who}<span class="d">{e(due)}</span></span></div></div>'
-    panel = f'<div class="panel">{"".join(pics)}</div>' if pics else ""
+    panel = f'<div class="cards">{"".join(pics)}</div>' if pics else ""
     cover = f'<section class="slide cover">{header}<h1>{e(headline(result))}</h1><p class="lede">{e(lede(result))}</p><p class="verdict">{status(overall)}</p>{panel}{step}</section>'
     notes = "".join(f"<li>{e(n)}</li>" for n in worth_knowing(result))
     before = f" The period before is {e(window_text({'window': result['prior_window'], 'window_used': {}}))}." if result.get("prior_window") else ""
@@ -470,7 +454,7 @@ def render(result: Json) -> str:
     title = f"Cost budget check: {window_text(result)}"
     return (
         '<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-        f'<title>{e(title)}</title><style>{floor_fonts(stylesheet() + sk.CSS + PAGE_CSS)}</style></head><body><main class="solo">{cover}{detail}{more}'
+        f'<title>{e(title)}</title><style>{floor_fonts(stylesheet() + sk.CSS + sk.SCORECARD_CSS + PAGE_CSS)}</style></head><body><main class="solo">{cover}{detail}{more}'
         '<p class="foot">A cost check says whether AI spend stays inside the budget the plan set. It is not the project\'s result: only did-it-land reads that. '
         "It shows where the money went, not why.</p></main></body></html>\n"
     )

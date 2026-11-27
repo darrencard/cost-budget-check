@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.3, 2026-11-27
+
+- The picture is scorecard rows in the grammar of the /update outcome scorecard, drawn with svgkit 1.2.0 (vendored byte-identical, pinned at landing-loop 78784ef). One frame, one row per budget line (AI usage per task, AI price per unit, cost per task): paired bars, budget grey above actual ink, each row on its own scale, the part over budget hatched; the figure `budget → actual · over` (`9,000 → 10,300 · +14.4%`); the contract's words, OVER BUDGET in ink or WITHIN BUDGET muted, as text. Then one row per model, its share of the budget against its cost, on one scale for the models. Geist Mono 12px for labels, figures and words, Geist 14px for names; no text inside any picture. The wide and phone SVG variants and the card around them are gone.
+- `cost_check.json` gains `budget` and `budget_display` per model (its token share of the budget, a ledger row), so every bar the page draws prints its figure. The `cost` key of the project file is unchanged.
+- The budget word under the heading is plain mono text, not a boxed chip.
+- README and SKILL.md use plain words: project, the project file, and the landing brief defined once as a one-page plan. SKILL.md tells Claude to use the user's own word if they say bet. Keys, file names and flags are unchanged.
+- Tests: no text inside an SVG, no picture with a viewBox, every frame font size 12 or 14px, no box inside the frame, no legacy svgkit primitive (rendered with DeprecationWarning as an error), one frame with one row per line and model, each figure line printed exactly, a unique hatch id per bar, the aria-label equal to the verdict.
+
 ## 0.3.2, 2026-11-27
 
 - The HTML page follows the Landing Loop sample anatomy: the shared header (mark, DACARD, skill, date, version, blue Illustrative tag), the verdict as the heading ("Quote drafting is $1.89 over its cost budget, and the large model drives the largest part."), the budget word, the signature picture, one next step with the brief's decider in brass and a due date, then each line against the budget beside where the money went, in two columns. Model ids, line keys, files, flags, the record key and the evidence ledger fold under "For your engineers".

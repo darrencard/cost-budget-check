@@ -22,6 +22,6 @@ render time, so the page is in the same brand family as the Leader Report with n
 
 ## From landing-loop
 
-svgkit.py is landing-loop's tools/svgkit.py at commit 5d01756d08ab3eb92b457c3286729791df6bcf5f, byte-identical
-(sha256 8526cf100159a9e5a8958bba4ceb0373a7edc265f481d63795d1731a5999d054), pinned in VENDORED.json beside this file
-under `landing-loop`. scripts/page.py draws the page's pictures with it, in the Landing Loop's one visual family.
+svgkit.py is landing-loop's tools/svgkit.py at commit 78784efd2ecd5282f6ec264e545ce2075e459be2, byte-identical
+(sha256 ceb6a0b094d4d5291f22d62ed6d9f528f955ec4599478306a0c2187152febf6d), pinned in VENDORED.json beside this file
+under `landing-loop`. scripts/page.py draws the page's scorecard rows with it (svgkit 1.2.0).

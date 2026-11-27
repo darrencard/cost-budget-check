@@ -1,6 +1,6 @@
 [project]
 name = "cost-budget-check"
-version = "0.3.2"
+version = "0.3.3"
 description = "A skill that checks an AI feature's spend against its landing brief's cost budget."
 requires-python = ">=3.11"
 # Standard library only, on purpose: the scripts run inside sandboxes that cannot install packages.

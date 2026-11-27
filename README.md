@@ -1,12 +1,12 @@
 # Is your AI feature within budget?
 
-A free Claude skill that checks each AI feature's spend against its landing brief's cost budget, and names the feature and model behind any drift.
+A free Claude skill that checks each AI feature's spend against the cost budget in its landing brief (a one-page plan: what good looks like, by when, at what cost), and names the feature and model behind any drift.
 
 **Why it matters:** a feature can pass its evals and still cost twice what was planned. The budget is two lines, tokens per task and price per token. This check holds spend to both, in code, with a source for every figure.
 
 **How it works:** it reads live usage (the Anthropic usage report, Vercel AI Gateway, agent run records) or a CSV, and prices it with a pricing table that carries its own source and date. It marks each line within budget or over budget, shows the change since last period, and renders one page for leaders.
 
-**Part of the Landing Loop:** it reads the brief with the Product & Technology Leader Report's own parser and writes the `cost` key of `landing/<bet>.json`, which the report reads.
+**Part of the Landing Loop:** it reads the brief with the Product & Technology Leader Report's own parser and writes the `cost` key of the project file, `landing/<bet>.json`, which the report reads.
 
 ## Install
 
@@ -25,7 +25,7 @@ Install the cost-budget-check skill from https://github.com/darrencard/cost-budg
 
 ## What you see
 
-`python3 scripts/check.py --demo` runs a second, smaller fixture bundled with the skill: two made-up Acme features, `visit-notes` and `quote-follow-up`, with their own briefs and budgets. It is not the quote-drafting bet in the Sample below. Acme is an invented company; every figure is illustrative.
+`python3 scripts/check.py --demo` runs a second, smaller fixture bundled with the skill: two made-up Acme features, `visit-notes` and `quote-follow-up`, with their own briefs and budgets. It is not the quote-drafting project in the Sample below. Acme is an invented company; every figure is illustrative.
 
 ```text
 | Project         | Line              | Budget      | Actual      | Against budget | Before      | Since then | Status        |
@@ -45,7 +45,7 @@ The page and its twin use plain words for leaders: AI usage per task is tokens p
 
 ## Sample
 
-[examples/acme/cost-budget-check.html](examples/acme/cost-budget-check.html) follows Acme's `quote-drafting` bet through the Landing Loop. It uses the canonical brief, copied unchanged into `examples/acme/briefs/`, and two weeks of gateway usage with drift: tokens per task, price per token and cost per task all over budget, driven by the large model (`vendor-a/xl`). The page has a Markdown twin (`cost-budget-check.md`), and `examples/acme/landing/quote-drafting.json` holds only the `cost` key. Every figure is illustrative.
+[examples/acme/cost-budget-check.html](examples/acme/cost-budget-check.html) follows Acme's `quote-drafting` project through the Landing Loop. It uses the canonical brief, copied unchanged into `examples/acme/briefs/`, and two weeks of gateway usage with drift: tokens per task, price per token and cost per task all over budget, driven by the large model (`vendor-a/xl`). The page has a Markdown twin (`cost-budget-check.md`), and `examples/acme/landing/quote-drafting.json` holds only the `cost` key. Every figure is illustrative.
 
 Regenerate it from the repository root (a test checks this command reproduces the committed files byte for byte):
 
@@ -62,7 +62,7 @@ python3 skills/cost-budget-check/scripts/check.py --brief quote-drafting=example
 | Two-line budget | Reads tokens per task and price per token from each landing brief, with the Leader Report's own parser | The budget you set is the one it checks |
 | Live data first | Reads the Anthropic usage and cost reports, Vercel AI Gateway usage and agent run records as the APIs return them; CSV as the fallback; no keys stored | No export to build before the first check |
 | One page for leaders | A self-contained HTML page in the Leader Report's style, with a Markdown twin | Ready to send, with the evidence ledger inside |
-| Landing Loop record | Writes only the `cost` key of `landing/<bet>.json`, every figure with value, unit, source, window and date | The Leader Report and the other loop skills read the same figures |
+| The project file | Writes only the `cost` key of `landing/<bet>.json`, every figure with value, unit, source, window and date | The Leader Report and the other loop skills read the same figures |
 | Figures computed in code | Python computes every figure; each has a ledger row with its formula and sources | Any number traces back to its file in seconds |
 | Cache reads priced apart | Prices input, output, cache read and cache write at their own rates, and counts cached tokens once | Price per token reflects what caching really saves |
 | Drift and its driver | Splits cost over budget by model so the parts add up, and names the largest; shows each line's change since the prior window | You know which feature and model to look at first |

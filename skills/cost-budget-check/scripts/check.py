@@ -61,7 +61,7 @@ import pricing as pricing_mod  # noqa: E402
 import readers  # noqa: E402
 
 TOOL = "cost-budget-check"
-VERSION = "0.3.2"
+VERSION = "0.3.3"
 WITHIN = "within budget"
 OVER = "over budget"
 RECONCILE_TOLERANCE = 0.02
@@ -396,6 +396,8 @@ def run(args: argparse.Namespace) -> Json:
                     "cost": mcost,
                     "cost_display": ledger.add(f"{mid}.cost", f"{name} priced cost on {model}", mcost, fmt_money(mcost), "sum of tokens x rate per token type", src),
                     "price_per_token_display": ledger.add(f"{mid}.price_per_token", f"{name} price per token on {model}", mcost / mtok if mtok else 0.0, fmt_price(mcost / mtok if mtok else 0.0), "model cost / model tokens", src),
+                    "budget": mcost - mdrift,
+                    "budget_display": ledger.add(f"{mid}.budget", f"{name} share of the budget on {model}", mcost - mdrift, fmt_money(mcost - mdrift), "model token share x budgeted cost", src + [b.source]),
                     "drift": mdrift,
                     "drift_display": ledger.add(f"{mid}.drift", f"{name} cost over budget on {model}", mdrift, fmt_money(mdrift), "model cost - model token share x budgeted cost", src + [b.source]),
                 }
