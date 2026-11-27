@@ -195,10 +195,7 @@ def lede(result: Json) -> str:
         c = f["checks"].get("cost_per_task")
         if c:
             said = f" From {window_text(result)}, each task cost {c['actual_display']} against a budget of {c['budget_display']} ({c['over_display']})."
-    return (
-        f"Each project's AI spend against the cost budget in {BRIEF_MEANS}. The budget is two lines, AI usage per task and AI price per unit; "
-        f"multiplied, they give cost per task.{said}"
-    )
+    return f"Each project's AI spend against the cost budget in {BRIEF_MEANS}. The budget is two lines, AI usage per task and AI price per unit; multiplied, they give cost per task.{said}"
 
 
 def part(top: Json, f: Json) -> str:
@@ -218,10 +215,7 @@ def next_step(result: Json) -> tuple[str, str, str]:
         f = next(x for x in result["features"] if x["feature"] == top["feature"])
         lines = [LOWER[k] for k in LINES if f["checks"].get(k, {}).get("status") == "over budget" and k != "cost_per_task"]
         rise = f" and the rise in {' and '.join(lines)}" if lines else ""
-        text = (
-            f"Review the {name(f)} work sent to {models.get(top['model'], top['model'])} ({part(top, f)}){rise}. "
-            "Then bring cost per task back under budget, or change the budget in the landing brief, and run this check again."
-        )
+        text = f"Review the {name(f)} work sent to {models.get(top['model'], top['model'])} ({part(top, f)}){rise}. Then bring cost per task back under budget, or change the budget in the landing brief, and run this check again."
         return text, f.get("decides") or "", due
     over = [f for f in result["features"] if f.get("status") == "over budget"]
     if over:
@@ -352,10 +346,7 @@ def lines_list(result: Json) -> str:
             if not c:
                 continue
             since = f" The period before: {e(c['prior_display'])} ({e(c['change_display'])} since)." if c.get("prior_display") else ""
-            rows.append(
-                f"<div><dt>{LABEL[key]}<br>{status(c['status'])}</dt><dd><b>{e(c['actual_display'])}</b> against a budget of {e(c['budget_display'])}, {e(c['over_display'])}."
-                f"<small>{DEFINITION[key]}{since}</small></dd></div>"
-            )
+            rows.append(f"<div><dt>{LABEL[key]}<br>{status(c['status'])}</dt><dd><b>{e(c['actual_display'])}</b> against a budget of {e(c['budget_display'])}, {e(c['over_display'])}.<small>{DEFINITION[key]}{since}</small></dd></div>")
         if not rows:
             rows.append(f"<div><dt>Not checked</dt><dd>{e(plain('; '.join(f['gaps'])))}</dd></div>")
         head = f"<h3>{e(name(f))}</h3>" if many else ""
@@ -369,10 +360,7 @@ def money_list(result: Json) -> str:
     for f in result["features"]:
         for m in sorted(f.get("models", []), key=lambda m: -m["drift"]):
             who = cap(models.get(m["model"], m["model"])) + (f" on {name(f)}" if len(result["features"]) > 1 else "")
-            rows.append(
-                f"<div><dt>{e(who)}</dt><dd><b>{e(m['drift_display'])}</b> over budget. {e(m['share_display'])} of the AI usage, "
-                f"{e(m['cost_display'])} spent, {e(m['price_per_token_display'])} a unit.</dd></div>"
-            )
+            rows.append(f"<div><dt>{e(who)}</dt><dd><b>{e(m['drift_display'])}</b> over budget. {e(m['share_display'])} of the AI usage, {e(m['cost_display'])} spent, {e(m['price_per_token_display'])} a unit.</dd></div>")
         if f.get("cost_display"):
             tasks = f" over {e(f['tasks_display'])} tasks" if f.get("tasks_display") else ""
             rows.append(f"<div><dt>{e(name(f))} in all</dt><dd><b>{e(f['cost_display'])}</b> spent{tasks}; {e(f.get('drift_display', ''))} over budget.</dd></div>")
@@ -385,10 +373,7 @@ def money_list(result: Json) -> str:
         rows.append(f"<div><dt>No plan</dt><dd>{e(u['feature'])}: <b>{e(u['cost_display'])}</b> spent with no landing brief, so no budget to check.</dd></div>")
     if "reconcile" in result:
         r = result["reconcile"]
-        rows.append(
-            f"<div><dt>The bill</dt><dd><b>{e(r['billed_display'])}</b> billed; {e(r['priced_display'])} priced from usage; "
-            f"{e(r['unattributed_display'])} not in the usage given.</dd></div>"
-        )
+        rows.append(f"<div><dt>The bill</dt><dd><b>{e(r['billed_display'])}</b> billed; {e(r['priced_display'])} priced from usage; {e(r['unattributed_display'])} not in the usage given.</dd></div>")
     if not rows:
         return "<p class='sc-d'>No spend to split.</p>"
     lede = "Cost over budget is split by model as each model's cost minus its share of the budget by usage, so the parts add up. It shows where the money went, not why."
@@ -456,10 +441,7 @@ def render(result: Json) -> str:
     who = f'<span class="o">{e(decides)}</span>' if decides else ""
     step = f'<div class="next"><b>What to do next</b><div><p>{e(text)}</p><span class="who">{who}<span class="d">{e(due)}</span></span></div></div>'
     panel = f'<div class="panel">{"".join(pics)}</div>' if pics else ""
-    cover = (
-        f'<section class="slide cover">{header}<h1>{e(headline(result))}</h1><p class="lede">{e(lede(result))}</p>'
-        f'<p class="verdict">{status(overall)}</p>{panel}{step}</section>'
-    )
+    cover = f'<section class="slide cover">{header}<h1>{e(headline(result))}</h1><p class="lede">{e(lede(result))}</p><p class="verdict">{status(overall)}</p>{panel}{step}</section>'
     notes = "".join(f"<li>{e(n)}</li>" for n in worth_knowing(result))
     before = f" The period before is {e(window_text({'window': result['prior_window'], 'window_used': {}}))}." if result.get("prior_window") else ""
     detail = (

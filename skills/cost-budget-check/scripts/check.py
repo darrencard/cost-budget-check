@@ -297,7 +297,20 @@ def run(args: argparse.Namespace) -> Json:
             unbriefed.append({"feature": name, "cost": cost, "cost_display": fmt_money(cost), "files": files})
             continue
         b = budgets[name]
-        f: Json = {"feature": name, "title": b.title or name, "brief": b.source, "brief_path": b.path, "brief_sha256": b.sha256, "metric": b.metric, "line": b.line, "decides": b.decides, "files": files, "checks": {}, "models": [], "gaps": []}
+        f: Json = {
+            "feature": name,
+            "title": b.title or name,
+            "brief": b.source,
+            "brief_path": b.path,
+            "brief_sha256": b.sha256,
+            "metric": b.metric,
+            "line": b.line,
+            "decides": b.decides,
+            "files": files,
+            "checks": {},
+            "models": [],
+            "gaps": [],
+        }
         if b.line == "fixed code":
             f["gaps"].append("the brief puts this feature in fixed code, so it has no model budget to check.")
             if recs:
