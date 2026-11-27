@@ -11,13 +11,14 @@ follows that skill's references/design.md, the same brand family as dacard.ai/up
   - plan against actual: budget grey above actual ink, hatched when over budget
   - labels in Geist Mono capitals, sentences in Geist, headings in Instrument Sans; hairlines, not boxes
   - green, grey-white and red are a bet's landed, watch and stalled only, which did-it-land sets, so
-    this page uses none of them
+    this page uses none of them (the template's green selection and focus ring are set to ink here)
+  - each feature goes by its brief's title ("Quote drafting"); the slug stays in the evidence ledger
   - an Illustrative tag when the prices are illustrative
 
 Every figure on the page is a display string from the ledger; the page computes nothing but the
 positions of marks. Every piece of text is escaped. The page needs no network.
 
-Standard library only. Runs on Python 3.9 or later.
+Standard library only. Runs on Python 3.11 or later.
 """
 
 from __future__ import annotations
@@ -39,6 +40,8 @@ Json = dict[str, Any]
 # Layout for a report page on top of the Leader Report stylesheet: no rail, sections instead of slides.
 PAGE_CSS = """
 main{margin-left:0}
+::selection{background:var(--t1);color:var(--bg)}
+:focus-visible{outline-color:var(--t1)}
 .slide{min-height:0;padding:56px 40px 48px}
 .slide.first{padding-top:64px}
 .slide h1{font-size:clamp(36px,4.6vw,60px);max-width:22ch}
@@ -119,7 +122,7 @@ def figure_line(c: Json) -> str:
 def scorecard(result: Json) -> str:
     rows = ['<div class="sc-h"><span>Line</span><span>Prior &rarr; actual &middot; budget</span><span>Status</span></div>']
     for f in result["features"]:
-        rows.append(f'<div class="sc-g">{e(f["feature"])}</div>')
+        rows.append(f'<div class="sc-g">{e(name(f))}</div>')
         if not f["checks"]:
             rows.append(f'<div class="sc-r"><div class="sc-n"><span>No line checked</span><span class="sc-d">{e("; ".join(f["gaps"]))}</span></div><div class="sc-v"></div><div class="sc-s">{status(None)}</div></div>')
         for key in ("tokens_per_task", "price_per_token", "cost_per_task"):
@@ -147,7 +150,16 @@ def plan_vs_actual(f: Json) -> str:
             f'<div class="track"><div class="b" style="width:{pct(c["budget"] / top)}%"></div>'
             f'<div class="b a{over}" style="width:{pct(c["actual"] / top)}%"></div></div></div>'
         )
-    return f'<div><h3>{e(f["feature"])}</h3><div class="pv">{"".join(rows)}</div></div>' if rows else ""
+    return f'<div><h3>{e(name(f))}</h3><div class="pv">{"".join(rows)}</div></div>' if rows else ""
+
+
+def name(f: Json) -> str:
+    """What a page calls a feature: its brief's title, so a leader reads "Quote drafting", not the slug."""
+    return f.get("title") or f["feature"]
+
+
+def name_of(result: Json, feature: str) -> str:
+    return next((name(f) for f in result["features"] if f["feature"] == feature), feature)
 
 
 def headline(result: Json) -> str:
@@ -155,9 +167,9 @@ def headline(result: Json) -> str:
         top = result["drivers"][0]
         f = next(x for x in result["features"] if x["feature"] == top["feature"])
         if f["drift"] > 0:
-            return f"{f['feature']} is {f['drift_display']} over its cost budget, and {top['model']} drives the largest part."
-        return f"{f['feature']} is within its cost budget overall, but {top['model']} runs over it."
-    over = [f["feature"] for f in result["features"] if f.get("status") == "over budget"]
+            return f"{name(f)} is {f['drift_display']} over its cost budget, and {top['model']} drives the largest part."
+        return f"{name(f)} is within its cost budget overall, but {top['model']} runs over it."
+    over = [name(f) for f in result["features"] if f.get("status") == "over budget"]
     if over:
         return f"{', '.join(over)}: a budget line is over budget."
     if any(f.get("status") for f in result["features"]):
@@ -172,7 +184,7 @@ def lede(result: Json) -> str:
             c = f["checks"].get(key)
             if c and c["status"] != "within budget":
                 over.append(f"{LABEL[key].lower()} is {c['actual_display']} against {c['budget_display']} ({c['status']})")
-    said = f" For {result['features'][0]['feature']}, " + "; ".join(over) + "." if over and len(result["features"]) == 1 else ""
+    said = f" For {name(result['features'][0])}, " + "; ".join(over) + "." if over and len(result["features"]) == 1 else ""
     return f"Each feature's model spend against the cost budget in its landing brief: two lines, tokens per task and price per token, and their product, cost per task.{said} Each line is within budget or over budget."
 
 
@@ -189,12 +201,12 @@ def render(result: Json) -> str:
     for f in result["features"]:
         c = f["checks"].get("cost_per_task")
         if c:
-            facts.append(f"<span><b>{e(c['actual_display'])}</b>{e(f['feature'])} cost per task</span>")
+            facts.append(f"<span><b>{e(c['actual_display'])}</b>{e(name(f))} cost per task</span>")
         if f.get("cost_display"):
-            facts.append(f"<span><b>{e(f['cost_display'])}</b>{e(f['feature'])} priced</span>")
+            facts.append(f"<span><b>{e(f['cost_display'])}</b>{e(name(f))} priced</span>")
     for f in result["features"]:
         if f.get("drift", 0) > 0:
-            facts.append(f"<span><b>{e(f['drift_display'])}</b>{e(f['feature'])} over budget</span>")
+            facts.append(f"<span><b>{e(f['drift_display'])}</b>{e(name(f))} over budget</span>")
     if "reconcile" in result:
         facts.append(f"<span><b>{e(result['reconcile']['unattributed_display'])}</b>billed, not in the usage</span>")
     cover = (
@@ -219,11 +231,11 @@ def render(result: Json) -> str:
     for f in result["features"]:
         for m in f.get("models", []):
             model_rows.append(
-                f'<tr><td>{e(f["feature"])}</td><td><code>{e(m["model"])}</code></td><td><span class="sh"><i style="width:{pct(m["share"])}%"></i></span>{e(m["share_display"])}</td>'
+                f'<tr><td>{e(name(f))}</td><td><code>{e(m["model"])}</code></td><td><span class="sh"><i style="width:{pct(m["share"])}%"></i></span>{e(m["share_display"])}</td>'
                 f'<td class="num">{e(m["price_per_token_display"])}</td><td class="num">{e(m["cost_display"])}</td><td class="num">{e(m["drift_display"])}</td></tr>'
             )
     driver = (
-        f"<p class='lede'>The driver is {e(result['drivers'][0]['feature'])} on {e(result['drivers'][0]['model'])}: {e(result['drivers'][0]['drift_display'])} of the cost over budget. "
+        f"<p class='lede'>The driver is {e(name_of(result, result['drivers'][0]['feature']))} on {e(result['drivers'][0]['model'])}: {e(result['drivers'][0]['drift_display'])} of the cost over budget. "
         "Cost over budget is split by model as each model's cost minus its share of the budget by tokens, so the parts add up. It shows where the money went, not why.</p>"
         if result["drivers"]
         else "<p class='lede'>No feature and model is over budget.</p>"

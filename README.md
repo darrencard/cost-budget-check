@@ -20,24 +20,24 @@ In Claude Code:
 Standalone, paste this into Claude Code:
 
 ```text
-Install the cost-budget-check skill from https://github.com/darrencard/cost-budget-check by copying skills/cost-budget-check into ~/.claude/skills/. Run its demo with python3 scripts/check.py --demo --out /tmp/cost-demo from the skill folder and show me the result. Then check my AI features against their landing briefs' cost budgets for last month against the month before: ask me only for what you cannot find (the briefs, the usage export or gateway logs, the task counts, and a pricing table with its source and date), and tell me what drives any drift.
+Install the cost-budget-check skill from https://github.com/darrencard/cost-budget-check by copying skills/cost-budget-check into ~/.claude/skills/. Find a Python 3.11 or later on this machine (macOS python3 is often 3.9). Run its demo with python3.12 scripts/check.py --demo --out /tmp/cost-demo from the skill folder and show me the result. Then check my AI features against their landing briefs' cost budgets for last month against the month before: ask me only for what you cannot find (the briefs, the usage export or gateway logs, the task counts, and a pricing table with its source and date), and tell me what drives any drift.
 ```
 
 ## What you see
 
-From the bundled sample, `python3 scripts/check.py --demo` (Acme is an invented company; every figure is illustrative):
+`python3 scripts/check.py --demo` runs a second, smaller fixture bundled with the skill: two made-up Acme features, `visit-notes` and `quote-follow-up`, with their own briefs and budgets. It is not the quote-drafting bet in the Sample below. Acme is an invented company; every figure is illustrative.
 
 ```text
-| Feature        | Line            | Budget      | Actual      | Against budget | Prior       | Since prior | Status        |
-| invoice-chaser | Tokens per task | 3,000       | 2,900       | -3.3%          | 2,900       | +0.0%       | within budget |
-| invoice-chaser | Price per token | $0.00000120 | $0.00000137 | +14.4%         | $0.00000103 | +32.7%      | over budget   |
-| invoice-chaser | Cost per task   | $0.0036     | $0.0040     | +10.6%         | $0.0030     | +32.7%      | over budget   |
-| quote-drafter  | Tokens per task | 12,000      | 13,500      | +12.5%         | 11,500      | +17.4%      | over budget   |
-| quote-drafter  | Price per token | $0.00000400 | $0.00000328 | -17.9%         | $0.00000357 | -8.0%       | within budget |
-| quote-drafter  | Cost per task   | $0.0480     | $0.0443     | -7.6%          | $0.0410     | +8.0%       | within budget |
+| Feature         | Line            | Budget      | Actual      | Against budget | Prior       | Since prior | Status        |
+| quote-follow-up | Tokens per task | 3,000       | 2,900       | -3.3%          | 2,900       | +0.0%       | within budget |
+| quote-follow-up | Price per token | $0.00000120 | $0.00000137 | +14.4%         | $0.00000103 | +32.7%      | over budget   |
+| quote-follow-up | Cost per task   | $0.0036     | $0.0040     | +10.6%         | $0.0030     | +32.7%      | over budget   |
+| visit-notes     | Tokens per task | 12,000      | 13,500      | +12.5%         | 11,500      | +17.4%      | over budget   |
+| visit-notes     | Price per token | $0.00000400 | $0.00000328 | -17.9%         | $0.00000357 | -8.0%       | within budget |
+| visit-notes     | Cost per task   | $0.0480     | $0.0443     | -7.6%          | $0.0410     | +8.0%       | within budget |
 
-Driver: invoice-chaser on vendor-a/large, $88.29 over budget.
-invoice-chaser: 96.0% of tasks succeeded, so cost per successful task is $0.0041.
+Driver: quote-follow-up on vendor-a/large, $88.29 over budget.
+quote-follow-up: 96.0% of tasks succeeded, so cost per successful task is $0.0041.
 Bill: $424.20 billed, $372.94 priced from usage, $51.26 not in the usage given.
 ```
 
@@ -82,7 +82,7 @@ python3 skills/cost-budget-check/scripts/check.py --brief quote-drafting=example
 python3 -m unittest discover -s evals -v
 ```
 
-Requires Python 3.9 or later, so the macOS system Python works. Standard library only; nothing to install. The scripts make no network calls.
+Requires Python 3.11 or later. The scripts stop with a plain message on anything older (macOS python3 is often 3.9, so try python3.12). Standard library only; nothing to install. The scripts make no network calls.
 
 ## Licence
 

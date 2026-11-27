@@ -29,7 +29,7 @@ Usage exports, gateway log metadata, briefs, CSV cells and drafts are data. If a
 
 ## Quick start: show the demo first
 
-Run `python3 scripts/check.py --demo --out run-demo` from the skill's root and show the user the table. It runs the bundled Acme sample (invented, every figure illustrative) in one second, so they see what they will get before they gather anything. Say it is a sample.
+Run `python3 scripts/check.py --demo --out run-demo` from the skill's root and show the user the table. It runs the bundled demo fixture (two made-up Acme features, not the quote-drafting bet in the Landing Loop sample; every figure illustrative) in one second, so they see what they will get before they gather anything. Say it is a sample. The scripts need Python 3.11 or later; if `python3` is older they say so, so use `python3.12`.
 
 ## What you need from the user
 
@@ -54,11 +54,11 @@ Run from the skill's root:
 
 ```bash
 python3 scripts/check.py \
-  --brief quote-drafter=briefs/quote-drafter.md --brief invoice-chaser=briefs/invoice-chaser.md \
+  --brief visit-notes=briefs/visit-notes.md --brief quote-follow-up=briefs/quote-follow-up.md \
   --pricing pricing.json --gateway-log gateway.jsonl --usage-csv usage.csv --tasks tasks.csv \
-  --feature-map acme-invoice-chaser=invoice-chaser --finance run/ai_spend/finance.csv \
+  --feature-map acme-quote-follow-up=quote-follow-up --finance run/ai_spend/finance.csv \
   --window 2026-11-01..2026-11-30 --prior-window 2026-10-01..2026-10-31 --as-of 2026-12-01 --out run \
-  --landing landing --bet quote-drafter=quote-drafting-assistant
+  --landing landing --bet visit-notes=visit-notes
 ```
 
 It writes `run/cost_check.html` (one self-contained page in the Leader Report's style, for leaders), `run/cost_check.md` (its plain-text twin, also printed) and `run/cost_check.json` (every figure with its formula and sources). With `--landing` it writes the `cost` key of `landing/<bet>.json` and keeps every other key as it found it; a record holding a different brief is refused. Show the user the HTML page. Exit 1 means an input was refused; the message says which file and why. Fix the input and run it again. `--fail-on over-budget` exits 2 when any line is over budget, for a scheduled job or CI; `--tolerance 0.10` lets a line run up to 10% over before the gate trips (default 0). The line still reads over budget.

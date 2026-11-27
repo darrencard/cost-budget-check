@@ -1,3 +1,3 @@
 feature,tasks,succeeded,start,end,source
-invoice-chaser,90000,86400,2026-11-01,2026-11-30,"invoice reminders sent, from the billing events table; succeeded passed the reminder eval"
-invoice-chaser,93000,89280,2026-10-01,2026-10-31,"invoice reminders sent, from the billing events table; succeeded passed the reminder eval"
+quote-follow-up,90000,86400,2026-11-01,2026-11-30,"follow-up messages sent, from the quote events table; succeeded passed the follow-up eval"
+quote-follow-up,93000,89280,2026-10-01,2026-10-31,"follow-up messages sent, from the quote events table; succeeded passed the follow-up eval"

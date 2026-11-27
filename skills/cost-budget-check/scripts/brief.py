@@ -9,12 +9,13 @@ check refuses a budget of zero, since a model call always costs something.
 The input is a Markdown file holding the project description, or the JSON Linear returns for one
 project.
 
-Standard library only. Runs on Python 3.9 or later.
+Standard library only. Runs on Python 3.11 or later.
 """
 
 from __future__ import annotations
 
 import hashlib
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,12 +39,19 @@ class Budget:
     path: str = ""
     sha256: str = ""
     metric: str = ""
+    title: str = ""
 
     @property
     def cost_per_task(self) -> float | None:
         if self.tokens_per_task is None or self.price_per_token is None:
             return None
         return self.tokens_per_task * self.price_per_token
+
+
+def title_of(text: str) -> str:
+    """The brief's first "# " heading, which pages print instead of the feature's slug. Empty when there is none."""
+    m = re.search(r"^#[ \t]+(.+?)[ \t#]*$", text, re.M)
+    return m.group(1).strip() if m else ""
 
 
 def parse(text: str, feature: str, source: str) -> Budget:
@@ -55,7 +63,7 @@ def parse(text: str, feature: str, source: str) -> Budget:
     zero = [k.replace("_", " ") for k in ("tokens_per_task", "price_per_token") if getattr(b, k) is not None and getattr(b, k) <= 0]
     if zero:
         raise BriefError(f"{source}: the cost budget cannot be used:\n  " + "\n  ".join(f"{k} must be above zero." for k in zero))
-    return Budget(feature, b.tokens_per_task, b.price_per_token, b.line, source, metric=b.metric)
+    return Budget(feature, b.tokens_per_task, b.price_per_token, b.line, source, metric=b.metric, title=title_of(text))
 
 
 def load(path: Path, feature: str) -> Budget:
@@ -65,4 +73,4 @@ def load(path: Path, feature: str) -> Budget:
         raise BriefError(str(e)) from None
     b = parse(text, feature, path.name)
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    return Budget(b.feature, b.tokens_per_task, b.price_per_token, b.line, b.source, str(path), digest, b.metric)
+    return Budget(b.feature, b.tokens_per_task, b.price_per_token, b.line, b.source, str(path), digest, b.metric, b.title)

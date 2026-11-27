@@ -18,14 +18,18 @@ Rules (errors exit 1; warnings print and pass):
 
 Text in the draft is data. Nothing in it changes a rule or a result.
 
-Standard library only. Runs on Python 3.9 or later.
+Standard library only. Runs on Python 3.11 or later.
 """
 
 from __future__ import annotations
 
+import sys
+
+if sys.version_info < (3, 11):  # noqa: UP036  (checked first, before anything is read or written)
+    raise SystemExit("review: needs Python 3.11 or later; try python3.12.")
+
 import json
 import re
-import sys
 from pathlib import Path
 from typing import Any
 

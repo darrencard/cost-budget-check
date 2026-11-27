@@ -7,3 +7,7 @@
 - README: one trademark line for Claude and Claude Code.
 - README: the plugin lines point at the landing-loop marketplace, not this repository's own.
 - No change to what the skill computes. The version in the sample record's `tool` field moves with the release.
+- The `--demo` fixture is relabelled as a second, smaller fixture: its features are now `visit-notes` and `quote-follow-up`, so it cannot be read as the quote-drafting bet in the sample. Its next step is decided by the Head of Product, Quoting squad.
+- The page names each feature by its brief's title ("Quote drafting"), not its slug; the slug stays in the evidence ledger. `cost_check.json` gains a `title` per feature; the `cost` key of the record is unchanged.
+- Text selection and the focus ring print in ink, not the template's green.
+- Python 3.11 or later. The entry scripts check the version first and stop with a plain message on anything older.

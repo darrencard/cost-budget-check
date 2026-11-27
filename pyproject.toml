@@ -2,7 +2,7 @@
 name = "cost-budget-check"
 version = "0.3.1"
 description = "A skill that checks an AI feature's spend against its landing brief's cost budget."
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 # Standard library only, on purpose: the scripts run inside sandboxes that cannot install packages.
 dependencies = []
 
@@ -10,7 +10,7 @@ dependencies = []
 line-length = 240
 # Copied unchanged from the Leader Report at a pinned commit (see vendor/VENDORED.md); its own repo lints it.
 extend-exclude = ["skills/cost-budget-check/scripts/vendor"]
-target-version = "py39"
+target-version = "py311"
 
 [tool.ruff.lint]
 # E, F: errors and unused names. I: import order. B: likely bugs. UP: old syntax.

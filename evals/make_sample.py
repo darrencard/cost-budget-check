@@ -47,7 +47,7 @@ def main() -> None:
         day = first + datetime.timedelta(days=d)
         grown = day >= datetime.date(2026, 11, 1)
         for q in range(20):
-            at = datetime.datetime(day.year, day.month, day.day, 8, 0, tzinfo=datetime.timezone.utc) + datetime.timedelta(minutes=q * 23)  # noqa: UP017  (runs on 3.9)
+            at = datetime.datetime(day.year, day.month, day.day, 8, 0, tzinfo=datetime.UTC) + datetime.timedelta(minutes=q * 23)
             xl = day >= datetime.date(2026, 11, 8) and q % 5 == 0
             usage = (
                 {"input_tokens": 2600, "output_tokens": 1400, "cache_read_input_tokens": 6300, "cache_creation_input_tokens": 0}

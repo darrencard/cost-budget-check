@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Write the cost key of the Landing Loop record, landing/<bet>.json, and leave every other key alone.
 
-The record is shared by the five Landing Loop skills and the Leader Report (schema landing-loop/1):
+The record is shared by the Landing Loop skills, the Leader Report among them (schema landing-loop/1):
 
   {"schema": "landing-loop/1", "bet": "...", "brief": {"path": "...", "sha256": "..."},
    "portfolio": {...}, "spec": {...}, "evals": {...}, "cost": {...}, "landed": {...}}
@@ -15,7 +15,7 @@ is named under "not_checked" with the reason, and is absent, never estimated.
 A record already holding a different brief (by sha256) is refused: the cost would be checked against
 one brief and filed under another. A record with another schema is refused too.
 
-Standard library only. Runs on Python 3.9 or later.
+Standard library only. Runs on Python 3.11 or later.
 """
 
 from __future__ import annotations

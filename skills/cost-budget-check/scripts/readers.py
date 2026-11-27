@@ -22,7 +22,7 @@ cache_read_input_tokens) already count them apart. The rule used is printed for 
 
 These functions read files and return records. They make no network calls.
 
-Standard library only. Runs on Python 3.9 or later.
+Standard library only. Runs on Python 3.11 or later.
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ def day(value: Any) -> datetime.date | None:
         return None
     if isinstance(value, (int, float)):
         seconds = value / 1000 if value > 10_000_000_000 else value
-        return datetime.datetime.fromtimestamp(seconds, datetime.timezone.utc).date()  # noqa: UP017  (runs on 3.9)
+        return datetime.datetime.fromtimestamp(seconds, datetime.UTC).date()
     text = str(value).strip()
     try:
         return datetime.date.fromisoformat(text[:10])

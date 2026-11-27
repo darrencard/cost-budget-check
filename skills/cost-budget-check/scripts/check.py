@@ -2,7 +2,7 @@
 """Check each AI feature's spend against its landing brief's cost budget, and name what drives drift.
 
 Usage:
-  python3 scripts/check.py --brief quote-drafter=briefs/quote-drafter.md --brief invoice-chaser=briefs/invoice-chaser.md \\
+  python3 scripts/check.py --brief visit-notes=briefs/visit-notes.md --brief quote-follow-up=briefs/quote-follow-up.md \\
       --pricing pricing.json --gateway-log gateway.jsonl --usage-csv usage.csv --tasks tasks.csv \\
       --finance run/ai_spend/finance.csv --window 2026-11-01..2026-11-30 --as-of 2026-12-01 --out run
 
@@ -32,17 +32,21 @@ Exit code 0, or 2 when --fail-on over-budget is set and a line is over budget by
 
 This script reads files and writes files. It makes no network calls.
 
-Standard library only. Runs on Python 3.9 or later.
+Standard library only. Runs on Python 3.11 or later.
 """
 
 from __future__ import annotations
+
+import sys
+
+if sys.version_info < (3, 11):  # noqa: UP036  (checked first, before anything is read or written)
+    raise SystemExit("check: needs Python 3.11 or later; try python3.12.")
 
 import argparse
 import datetime
 import glob
 import json
 import math
-import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -293,7 +297,7 @@ def run(args: argparse.Namespace) -> Json:
             unbriefed.append({"feature": name, "cost": cost, "cost_display": fmt_money(cost), "files": files})
             continue
         b = budgets[name]
-        f: Json = {"feature": name, "brief": b.source, "brief_path": b.path, "brief_sha256": b.sha256, "metric": b.metric, "line": b.line, "files": files, "checks": {}, "models": [], "gaps": []}
+        f: Json = {"feature": name, "title": b.title or name, "brief": b.source, "brief_path": b.path, "brief_sha256": b.sha256, "metric": b.metric, "line": b.line, "files": files, "checks": {}, "models": [], "gaps": []}
         if b.line == "fixed code":
             f["gaps"].append("the brief puts this feature in fixed code, so it has no model budget to check.")
             if recs:
@@ -533,14 +537,14 @@ def demo_args(out: str) -> list[str]:
     """The arguments for the bundled Acme sample: two features, one month, the month before, and a bill."""
     a = SAMPLE
     return [
-        "--brief", f"quote-drafter={a / 'briefs' / 'quote-drafter.md'}",
-        "--brief", f"invoice-chaser={a / 'briefs' / 'invoice-chaser.md'}",
+        "--brief", f"visit-notes={a / 'briefs' / 'visit-notes.md'}",
+        "--brief", f"quote-follow-up={a / 'briefs' / 'quote-follow-up.md'}",
         "--pricing", str(a / "pricing.json"),
         "--gateway-log", str(a / "gateway.jsonl"),
         "--usage-csv", str(a / "usage.csv"),
         "--tasks", str(a / "tasks.csv"),
         "--finance", str(a / "finance.csv"),
-        "--feature-map", "acme-invoice-chaser=invoice-chaser",
+        "--feature-map", "acme-quote-follow-up=quote-follow-up",
         "--feature-map", "acme-search=search-assist",
         "--window", "2026-11-01..2026-11-30",
         "--prior-window", "2026-10-01..2026-10-31",

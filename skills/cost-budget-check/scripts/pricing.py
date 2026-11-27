@@ -14,7 +14,7 @@ reads never bill at the input rate. A match ending in * matches any model id wit
 longest match wins. A model no row matches is refused by name. There is no default rate: a guessed
 price would make every figure after it wrong.
 
-Standard library only. Runs on Python 3.9 or later.
+Standard library only. Runs on Python 3.11 or later.
 """
 
 from __future__ import annotations
